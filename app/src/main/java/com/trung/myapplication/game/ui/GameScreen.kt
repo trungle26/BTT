@@ -1,101 +1,156 @@
 package com.trung.myapplication.game.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-// avoid lifecycle viewModel import to keep this MVP simple; instantiate ViewModel locally
-import com.trung.myapplication.game.model.Card as GameCard
-import com.trung.myapplication.game.model.QuestionCard
-import com.trung.myapplication.game.model.EffectInstance
-import com.trung.myapplication.game.vm.GameViewModel
-import com.trung.myapplication.game.vm.GamePhase
+import androidx.compose.ui.unit.sp
+import com.trung.myapplication.game.model.Card
+import com.trung.myapplication.game.model.Team
+import com.trung.myapplication.game.ui.component.CardView
 
 @Composable
-fun GameScreen() {
-    val vm = remember { GameViewModel() }
-    val state by vm.state.collectAsState()
+fun GameScreen(
+    teams: List<Team>,
+    cards: List<Card>,
+    activeTeamIndex: Int,
+    onCardClicked: (Int) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF0A0E27)  // Deep dark blue background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+        ) {
+            // Header Section
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF1A1F3A),
+                shadowElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "TEAM STANDINGS",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF00D4FF),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-            // Teams row
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                state.teams.forEachIndexed { idx, team ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = team.name, style = MaterialTheme.typography.bodyLarge)
-                        Text(text = "${team.score}", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Board 6 rows x 8 columns (LazyVerticalGrid with 8 columns)
-            Box(modifier = Modifier.weight(1f)) {
-                LazyVerticalGrid(columns = GridCells.Fixed(8), modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(state.board) { index, cardState ->
-                        CardView(index = index, cardState.revealed, cardState.card, onClick = { vm.onCardClicked(index) })
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Active team and their effects
-            val active = state.teams.getOrNull(state.activeTeamIndex)
-            active?.let { team ->
-                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "Active: ${team.name}", modifier = Modifier.weight(1f))
-                    Row {
-                        team.hand.forEach { effect ->
-                            Button(onClick = { vm.useEffect(effect.id) }, enabled = !effect.used, modifier = Modifier.padding(4.dp)) {
-                                Text(text = effect.type.name, textAlign = TextAlign.Center)
-                            }
+                    // Teams row with scores
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        teams.forEach { team ->
+                            TeamScoreCard(
+                                team = team,
+                                isActive = team.id == activeTeamIndex,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
             }
 
-            // Question dialog
-            if (state.phase == GamePhase.SHOWING_QUESTION) {
-                val sel = state.selectedIndex
-                if (sel != null) {
-                    val card = state.board[sel].card
-                    if (card is QuestionCard) {
-                        QuestionDialog(card = card, timeLeftMs = state.timerMs, onAnswer = { idx -> vm.submitAnswer(idx) })
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Board Title
+            Text(
+                text = "CARD BOARD",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF00D4FF),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+
+            // Board 6 rows x 8 columns
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF1A1F3A),
+                shadowElevation = 4.dp
+            ) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(8),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    itemsIndexed(cards) { index, card ->
+                        CardView(
+                            card = card,
+                            onClick = { onCardClicked(index) },
+                        )
                     }
                 }
             }
-        }
-    }
-}
 
-@Composable
-fun CardView(index: Int, revealed: Boolean, card: GameCard, onClick: () -> Unit) {
-    Box(modifier = Modifier
-        .padding(6.dp)
-        .aspectRatio(3f / 4f)
-        .clickable { onClick() }) {
-        Card(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize().background(if (revealed) Color.White else Color.DarkGray), contentAlignment = Alignment.Center) {
-                if (!revealed) Text(text = "Card", color = Color.White)
-                else when (card) {
-                    is QuestionCard -> Text(text = "Q", color = Color.Black)
-                    is com.trung.myapplication.game.model.BombCard -> Text(text = "BOMB", color = Color.Red)
-                    else -> Text(text = "?", color = Color.Black)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Active Team Footer
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF4CAF50),
+                shadowElevation = 4.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "🎮 ACTIVE TEAM:",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+
+                    Text(
+                        text = teams[activeTeamIndex].name.uppercase(),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.Black,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.End
+                    )
                 }
             }
         }
@@ -103,24 +158,41 @@ fun CardView(index: Int, revealed: Boolean, card: GameCard, onClick: () -> Unit)
 }
 
 @Composable
-fun QuestionDialog(card: QuestionCard, timeLeftMs: Long, onAnswer: (Int) -> Unit) {
-    Surface(modifier = Modifier
-        .fillMaxWidth()
-        .padding(8.dp), color = Color(0xFFEEEEEE)) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(text = if (card.isChallenge) "Challenge" else "Question", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = card.text)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "Time left: ${timeLeftMs / 1000}s")
-            Spacer(modifier = Modifier.height(8.dp))
-            card.choices.forEachIndexed { idx, choice ->
-                Button(onClick = { onAnswer(idx) }, modifier = Modifier.fillMaxWidth().padding(4.dp)) {
-                    Text(text = choice)
-                }
-            }
+fun TeamScoreCard(
+    team: Team,
+    isActive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(80.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = if (isActive) Color(0xFF00D4FF) else Color(0xFF2A2F4F),
+        shadowElevation = if (isActive) 8.dp else 2.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = team.name,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isActive) Color.Black else Color.White
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "${team.score}",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isActive) Color.Black else Color(0xFF00D4FF)
+            )
         }
     }
 }
+
 
 

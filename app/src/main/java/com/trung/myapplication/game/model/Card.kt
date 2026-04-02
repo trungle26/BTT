@@ -3,19 +3,22 @@ package com.trung.myapplication.game.model
 // Card models for the game
 sealed class Card {
     abstract val id: String
+    abstract val isRevealed: Boolean
 }
 
 data class QuestionCard(
     override val id: String,
     val text: String,
     val choices: List<String>,
-    val correctIndex: Int,
+    val correctChoiceIndex: Int,
+    override val isRevealed: Boolean,
     val isChallenge: Boolean = false
 ) : Card()
 
-object BombCard : Card() {
-    override val id: String = "bomb"
-}
+data class BombCard(
+    override val id: String = "bomb",
+    override val isRevealed: Boolean = false
+) : Card()
 
 enum class EffectType {
     SEE_FUTURE,
