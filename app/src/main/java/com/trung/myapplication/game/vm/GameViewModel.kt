@@ -17,116 +17,53 @@ class GameViewModel : ViewModel() {
     private val _state = MutableStateFlow(GameState())
     val state: StateFlow<GameState> = _state.asStateFlow()
 
-    // --- Undo/NOPE support ---
-    private val stateStack = mutableListOf<GameState>()
     private var timerJob: Job? = null
-    private var timerPaused = false
+    private var remainingTimeMs = 20_000L // Track state outside the job
+    private var isPaused = false
+    private var isDoublePoint = false
     private val roundsPerTeam = 6 // each team plays 6 turns by default (8*6 = 48)
 
     init {
         startNewGame()
     }
 
-    private fun pushStateForUndo() {
-        // Deep copy all mutable lists
-        val snapshot = _state.value.copy(
-            teams = _state.value.teams.map { team ->
-                team.copy(hand = team.hand.map { it.copy() }.toMutableList())
-            },
-            cards = _state.value.cards.map { card ->
-                when (card) {
-                    is QuestionCard -> card.copy()
-                    is BombCard -> card.copy()
-                    else -> card
-                }
-            }
-        )
-        stateStack.add(snapshot)
-    }
-
-    fun playNope(nopeTeamId: Int, nopeEffectId: String) {
-        // Mark NOPE as used for the team
-        _state.update { st ->
-            val teams = st.teams.toMutableList()
-            val team = teams[nopeTeamId]
-            val hand = team.hand.toMutableList()
-            val idx = hand.indexOfFirst { it.id == nopeEffectId }
-            if (idx != -1) {
-                hand[idx] = hand[idx].copy(used = true)
-                teams[nopeTeamId] = team.copy(hand = hand)
-            }
-            st.copy(teams = teams)
-        }
-        // Revert to previous state
-        if (stateStack.isNotEmpty()) {
-            _state.value = stateStack.removeAt(stateStack.lastIndex)
-        }
-    }
-
-    fun commitState() {
-        stateStack.clear()
-    }
-
     // --- Effect Card Handling ---
-    fun useEffectCard(teamId: Int, effectId: String, targetTeamId: Int? = null) {
-        val st = _state.value
-        val team = st.teams[teamId]
-        val idx = team.hand.indexOfFirst { it.id == effectId }
+    fun useEffectCard(teamId: Int, effectId: String) {
+        val user = _state.value.teams[teamId]
+        val idx = user.effectCards.indexOfFirst { it.id == effectId }
         if (idx == -1) return
-        val inst = team.hand[idx]
-        if (inst.used) return
+        val effectCard = user.effectCards[idx]
+        if (effectCard.used) return
         markEffectCardUsed(teamId, effectId)
+        _state.update {
+            it.copy(activeEffect = effectCard)
+        }
 
-        when (inst.type) {
+        when (effectCard.type) {
             EffectType.SEE_FUTURE -> {
-                // Only mark as used
             }
             EffectType.GET_HELP -> {
-                // Mark as used and pause timer
-                markEffectCardUsed(teamId, effectId)
-                pushStateForUndo()
-                timerPaused = true
-                timerJob?.cancel()
+                pauseTimer()
             }
             EffectType.STEAL -> {
-                markEffectCardUsed(teamId, effectId)
-                // Take over: mark as used, push state, change active team
-                pushStateForUndo()
-                if (targetTeamId != null) {
-                    assignQuestionTo(teamId)
+                _state.update {
+                    it.copy(stolenTurnTeamIndex = teamId)
                 }
+                resetTimer()
+                isDoublePoint = false
             }
             EffectType.NOPE -> {
-                // NOPE handled via playNope()
             }
             EffectType.ASSIGN -> {
-                markEffectCardUsed(teamId, effectId)
-                // Attack: assign question to another team
-                pushStateForUndo()
-                if (targetTeamId != null) {
-                    assignQuestionTo(targetTeamId)
-                }
             }
             EffectType.DOUBLE_POINTS -> {
-                // Double points for next answer
-                pushStateForUndo()
-                markEffectCardUsed(teamId, effectId)
-                // Add a transient flag to team
-                val teams = st.teams.toMutableList()
-                val t = teams[teamId]
-                teams[teamId] = t.copy(hand = t.hand + EffectInstance(id = "__double_next_${teamId}", type = EffectType.DOUBLE_POINTS, used = true))
-                _state.update { it.copy(teams = teams) }
+                isDoublePoint = true
             }
             EffectType.ADD_ONE_TURN -> {
-                // Add one more turn for this team
-                pushStateForUndo()
-                markEffectCardUsed(teamId, effectId)
-                // You can implement logic to add a turn marker if needed
+
             }
             EffectType.SKIP -> {
                 // Skip turn
-                pushStateForUndo()
-                markEffectCardUsed(teamId, effectId)
                 advanceTurn()
             }
         }
@@ -147,7 +84,7 @@ class GameViewModel : ViewModel() {
                 val pick = pool.removeAt(rnd.nextInt(pool.size))
                 hand += EffectInstance(id = "${id}_$it", type = pick)
             }
-            Team(id = id - 1, name = "Team ${id}", hand = hand, score = 0)
+            Team(id = id - 1, name = "Team ${id}", effectCards = hand, score = 0)
         }
 
         _state.value = GameState(
@@ -221,41 +158,62 @@ class GameViewModel : ViewModel() {
 
     private fun startQuestionTimer() {
         timerJob?.cancel()
+        isPaused = false
+
         timerJob = viewModelScope.launch {
-            val duration = 20_000L
-            val start = System.currentTimeMillis()
-            while (true) {
-                val elapsed = System.currentTimeMillis() - start
-                val remaining = (duration - elapsed).coerceAtLeast(0L)
-                _state.update { it.copy(timerMs = remaining) }
-                if (remaining <= 0L) {
-                    onAnswerTimeout()
-                    break
+            while (remainingTimeMs > 0) {
+                if (!isPaused) {
+                    // Update the state
+                    _state.update { it.copy(timerMs = remainingTimeMs) }
+
+                    // Decrement and wait
+                    delay(200L)
+                    remainingTimeMs -= 200L
+                } else {
+                    // When paused, we "yield" to keep the coroutine alive
+                    // but inactive until isPaused becomes false
+                    delay(500L)
                 }
-                delay(200L)
+            }
+
+            if (remainingTimeMs <= 0) {
+                _state.update { it.copy(timerMs = 0) }
+                onAnswerTimeout()
             }
         }
     }
 
-    // In submitAnswer, push state for undo and handle double points
+    fun pauseTimer() {
+        isPaused = true
+    }
+
+    fun resumeTimer() {
+        isPaused = false
+    }
+
+    fun resetTimer() {
+        timerJob?.cancel()
+        remainingTimeMs = 20_000L
+        startQuestionTimer()
+    }
+
     fun submitAnswer(choiceIndex: Int) {
-        pushStateForUndo()
         val selectedCardIndex = _state.value.selectedCardIndex ?: return
         val currentCard = _state.value.cards[selectedCardIndex]
         if (currentCard !is QuestionCard) return
 
         timerJob?.cancel()
         val activeTeam = _state.value.teams[_state.value.activeTeamIndex]
-        val doubleFlagIdx = activeTeam.hand.indexOfFirst { it.id.startsWith("__double_next_") }
+        val doubleFlagIdx = activeTeam.effectCards.indexOfFirst { it.id.startsWith("__double_next_") }
         var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -10
-        if (doubleFlagIdx != -1 && points > 0) {
+        if (doubleFlagIdx != -1) {
             points *= 2
             // Remove the double flag after use
             val teams = _state.value.teams.toMutableList()
             val t = teams[_state.value.activeTeamIndex]
-            val hand = t.hand.toMutableList()
+            val hand = t.effectCards.toMutableList()
             hand.removeAt(doubleFlagIdx)
-            teams[_state.value.activeTeamIndex] = t.copy(hand = hand)
+            teams[_state.value.activeTeamIndex] = t.copy(effectCards = hand)
             _state.update { it.copy(teams = teams) }
         }
         applyScoreToActive(points)
@@ -267,82 +225,6 @@ class GameViewModel : ViewModel() {
         applyScoreToActive(-10)
         _state.value.selectedCardIndex?.let { markRevealed(it) }
         advanceTurn()
-    }
-
-    // Use effect: called when active team taps an effect button
-    fun useEffect(effectId: String) {
-        val s = _state.value
-        val team = s.teams[s.activeTeamIndex]
-        val idx = team.hand.indexOfFirst { it.id == effectId }
-        if (idx == -1) return
-        val inst = team.hand[idx]
-        if (inst.used) return
-
-        // mark used
-        team.hand[idx] = inst.copy(used = true)
-
-        when (inst.type) {
-            EffectType.SEE_FUTURE -> {
-                // will be handled in real world, only need to mark used
-            }
-
-            EffectType.SKIP -> {
-                advanceTurn()
-            }
-
-            EffectType.ASSIGN -> {
-                // handled when question showing: UI must call assignTo(teamId)
-            }
-
-            EffectType.STEAL -> {
-                // handled when question showing: UI must call stealByActive()
-            }
-
-            EffectType.DOUBLE_POINTS -> {
-                // set a simple marker on team by temporarily adding a special EffectInstance in team (we'll implement as negative id)
-                // For simplicity: we will multiply next correct answer by 2 by checking this flag in submitAnswer
-                // Here we add a transient flag via team.hand with id "__double_next"
-                team.hand += EffectInstance(
-                    id = "__double_next_${team.id}",
-                    type = EffectType.DOUBLE_POINTS,
-                    used = true
-                )
-            }
-
-            EffectType.ADD_ONE_TURN -> {
-
-            }
-
-            EffectType.NOPE -> {
-                // NOPE logic to be applied manually by other players when appropriate; here we'll just mark used
-            }
-
-            EffectType.GET_HELP -> {
-                // tracked as used; real help is external
-            }
-        }
-
-        // update teams in state
-        _state.update { st ->
-            val tms = st.teams.toMutableList()
-            tms[st.activeTeamIndex] = team
-            st.copy(teams = tms)
-        }
-    }
-
-    fun assignQuestionTo(teamId: Int) {
-        val s = _state.value
-        val sel = s.selectedCardIndex ?: return
-
-        // we will change activeTeamIndex to target, and wait for them to answer
-        _state.update { it.copy(activeTeamIndex = teamId) }
-        // question stays showing; timer continues
-    }
-
-    fun stealByActive() {
-        // steal means current active already is stealer; if there is a question and selectedIndex exists,
-        // we allow the active team to answer (this is already the case). This method may be used when a team plays steal while not active.
-        // For simplicity, we'll no-op here because our UI uses activeTeamIndex to control who answers.
     }
 
     fun closePresentationScreen() {
@@ -369,11 +251,11 @@ class GameViewModel : ViewModel() {
         _state.update { st ->
             val teams = st.teams.toMutableList()
             val team = teams[teamId]
-            val hand = team.hand.toMutableList()
+            val hand = team.effectCards.toMutableList()
             val idx = hand.indexOfFirst { it.id == effectId }
             if (idx != -1) {
                 hand[idx] = hand[idx].copy(used = true)
-                teams[teamId] = team.copy(hand = hand)
+                teams[teamId] = team.copy(effectCards = hand)
             }
             st.copy(teams = teams)
         }

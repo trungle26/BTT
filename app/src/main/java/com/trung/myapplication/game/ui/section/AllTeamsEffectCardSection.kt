@@ -110,7 +110,7 @@ fun TeamEffectCardsCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                team.hand.forEach { effect ->
+                team.effectCards.forEach { effect ->
                     EffectCardBadge(
                         effect = effect,
                         onClicked = { onMarkEffectUsed(effect.id) }
