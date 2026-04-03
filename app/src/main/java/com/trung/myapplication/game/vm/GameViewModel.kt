@@ -17,14 +17,122 @@ class GameViewModel : ViewModel() {
     private val _state = MutableStateFlow(GameState())
     val state: StateFlow<GameState> = _state.asStateFlow()
 
+    // --- Undo/NOPE support ---
+    private val stateStack = mutableListOf<GameState>()
     private var timerJob: Job? = null
-
+    private var timerPaused = false
     private val roundsPerTeam = 6 // each team plays 6 turns by default (8*6 = 48)
 
     init {
         startNewGame()
     }
 
+    private fun pushStateForUndo() {
+        // Deep copy all mutable lists
+        val snapshot = _state.value.copy(
+            teams = _state.value.teams.map { team ->
+                team.copy(hand = team.hand.map { it.copy() }.toMutableList())
+            },
+            cards = _state.value.cards.map { card ->
+                when (card) {
+                    is QuestionCard -> card.copy()
+                    is BombCard -> card.copy()
+                    else -> card
+                }
+            }
+        )
+        stateStack.add(snapshot)
+    }
+
+    fun playNope(nopeTeamId: Int, nopeEffectId: String) {
+        // Mark NOPE as used for the team
+        _state.update { st ->
+            val teams = st.teams.toMutableList()
+            val team = teams[nopeTeamId]
+            val hand = team.hand.toMutableList()
+            val idx = hand.indexOfFirst { it.id == nopeEffectId }
+            if (idx != -1) {
+                hand[idx] = hand[idx].copy(used = true)
+                teams[nopeTeamId] = team.copy(hand = hand)
+            }
+            st.copy(teams = teams)
+        }
+        // Revert to previous state
+        if (stateStack.isNotEmpty()) {
+            _state.value = stateStack.removeAt(stateStack.lastIndex)
+        }
+    }
+
+    fun commitState() {
+        stateStack.clear()
+    }
+
+    // --- Effect Card Handling ---
+    fun useEffectCard(teamId: Int, effectId: String, targetTeamId: Int? = null) {
+        val st = _state.value
+        val team = st.teams[teamId]
+        val idx = team.hand.indexOfFirst { it.id == effectId }
+        if (idx == -1) return
+        val inst = team.hand[idx]
+        if (inst.used) return
+        markEffectCardUsed(teamId, effectId)
+
+        when (inst.type) {
+            EffectType.SEE_FUTURE -> {
+                // Only mark as used
+            }
+            EffectType.GET_HELP -> {
+                // Mark as used and pause timer
+                markEffectCardUsed(teamId, effectId)
+                pushStateForUndo()
+                timerPaused = true
+                timerJob?.cancel()
+            }
+            EffectType.STEAL -> {
+                markEffectCardUsed(teamId, effectId)
+                // Take over: mark as used, push state, change active team
+                pushStateForUndo()
+                if (targetTeamId != null) {
+                    assignQuestionTo(teamId)
+                }
+            }
+            EffectType.NOPE -> {
+                // NOPE handled via playNope()
+            }
+            EffectType.ASSIGN -> {
+                markEffectCardUsed(teamId, effectId)
+                // Attack: assign question to another team
+                pushStateForUndo()
+                if (targetTeamId != null) {
+                    assignQuestionTo(targetTeamId)
+                }
+            }
+            EffectType.DOUBLE_POINTS -> {
+                // Double points for next answer
+                pushStateForUndo()
+                markEffectCardUsed(teamId, effectId)
+                // Add a transient flag to team
+                val teams = st.teams.toMutableList()
+                val t = teams[teamId]
+                teams[teamId] = t.copy(hand = t.hand + EffectInstance(id = "__double_next_${teamId}", type = EffectType.DOUBLE_POINTS, used = true))
+                _state.update { it.copy(teams = teams) }
+            }
+            EffectType.ADD_ONE_TURN -> {
+                // Add one more turn for this team
+                pushStateForUndo()
+                markEffectCardUsed(teamId, effectId)
+                // You can implement logic to add a turn marker if needed
+            }
+            EffectType.SKIP -> {
+                // Skip turn
+                pushStateForUndo()
+                markEffectCardUsed(teamId, effectId)
+                advanceTurn()
+            }
+        }
+    }
+
+    // --- Game Logic ---
     fun startNewGame(seed: Long? = null) {
         val cards = CardsGenerator.generate(seed)
 
@@ -129,20 +237,28 @@ class GameViewModel : ViewModel() {
         }
     }
 
+    // In submitAnswer, push state for undo and handle double points
     fun submitAnswer(choiceIndex: Int) {
+        pushStateForUndo()
         val selectedCardIndex = _state.value.selectedCardIndex ?: return
         val currentCard = _state.value.cards[selectedCardIndex]
         if (currentCard !is QuestionCard) return
 
-        // check answer
         timerJob?.cancel()
-
-        if (choiceIndex == currentCard.correctChoiceIndex) {
-            applyScoreToActive(+10)
-        } else {
-            applyScoreToActive(-10)
+        val activeTeam = _state.value.teams[_state.value.activeTeamIndex]
+        val doubleFlagIdx = activeTeam.hand.indexOfFirst { it.id.startsWith("__double_next_") }
+        var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -10
+        if (doubleFlagIdx != -1 && points > 0) {
+            points *= 2
+            // Remove the double flag after use
+            val teams = _state.value.teams.toMutableList()
+            val t = teams[_state.value.activeTeamIndex]
+            val hand = t.hand.toMutableList()
+            hand.removeAt(doubleFlagIdx)
+            teams[_state.value.activeTeamIndex] = t.copy(hand = hand)
+            _state.update { it.copy(teams = teams) }
         }
-
+        applyScoreToActive(points)
         markRevealed(selectedCardIndex)
         advanceTurn()
     }
@@ -167,12 +283,10 @@ class GameViewModel : ViewModel() {
 
         when (inst.type) {
             EffectType.SEE_FUTURE -> {
-                // For simplicity: reveal to UI that team can peek; UI will call peekPositions
-                // No immediate state change here
+                // will be handled in real world, only need to mark used
             }
 
             EffectType.SKIP -> {
-                // skip: advance turn immediately
                 advanceTurn()
             }
 
@@ -196,12 +310,7 @@ class GameViewModel : ViewModel() {
             }
 
             EffectType.ADD_ONE_TURN -> {
-                // for simplicity: make active team not advance on next advanceTurn
-                team.hand += EffectInstance(
-                    id = "__extra_turn_${team.id}",
-                    type = EffectType.ADD_ONE_TURN,
-                    used = true
-                )
+
             }
 
             EffectType.NOPE -> {
@@ -244,6 +353,7 @@ class GameViewModel : ViewModel() {
             }
         }
         _state.update { it.copy(showingPresentationScreen = false, selectedCardIndex = null) }
+        commitState()
     }
 
     fun addPointsManually(delta: Int, teamId: Int) {
@@ -269,4 +379,3 @@ class GameViewModel : ViewModel() {
         }
     }
 }
-
