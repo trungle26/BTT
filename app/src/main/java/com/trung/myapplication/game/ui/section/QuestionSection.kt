@@ -43,7 +43,7 @@ fun QuestionSection(
             // Question Title
             Text(
                 text = if (card.isChallenge) "⭐ CHALLENGE" else "❓ QUESTION",
-                fontSize = 32.sp,
+                fontSize = 40.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF00D4FF),
                 modifier = Modifier.fillMaxWidth(),
@@ -55,7 +55,7 @@ fun QuestionSection(
             // Question Text
             Text(
                 text = card.text,
-                fontSize = 36.sp,
+                fontSize = 44.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
                 textAlign = TextAlign.Center,

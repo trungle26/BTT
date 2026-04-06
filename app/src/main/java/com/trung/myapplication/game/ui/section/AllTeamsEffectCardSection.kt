@@ -1,12 +1,19 @@
 package com.trung.myapplication.game.ui.section
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,11 +22,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.trung.myapplication.R
 import com.trung.myapplication.game.model.EffectInstance
 import com.trung.myapplication.game.model.EffectType
 import com.trung.myapplication.game.model.Team
@@ -27,6 +38,8 @@ import com.trung.myapplication.game.model.Team
 @Composable
 fun AllTeamsEffectCardSection(
     teams: List<Team>,
+    cardWidthDp: Int = 128,
+    cardHeightDp: Int = 176,
     activeTeamIndex: Int,
     onMarkEffectUsed: (teamId: Int, effectId: String) -> Unit,
     modifier: Modifier = Modifier
@@ -46,7 +59,7 @@ fun AllTeamsEffectCardSection(
         ) {
             Text(
                 text = "THẺ CHỨC NĂNG",
-                fontSize = 18.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF00D4FF),
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -62,6 +75,8 @@ fun AllTeamsEffectCardSection(
                     val team = teams[teamIndex]
                     TeamEffectCardsCard(
                         team = team,
+                        cardWidthDp = cardWidthDp,
+                        cardHeightDp = cardHeightDp,
                         isActive = teamIndex == activeTeamIndex,
                         onMarkEffectUsed = { effectId ->
                             onMarkEffectUsed(team.id, effectId)
@@ -76,6 +91,8 @@ fun AllTeamsEffectCardSection(
 @Composable
 fun TeamEffectCardsCard(
     team: Team,
+    cardWidthDp: Int = 128,
+    cardHeightDp: Int = 176,
     isActive: Boolean,
     onMarkEffectUsed: (String) -> Unit = {}
 ) {
@@ -93,27 +110,29 @@ fun TeamEffectCardsCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = team.name,
-                fontSize = 14.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = borderColor,
                 textAlign = TextAlign.Center
             )
 
             // Effect cards display
-            Column(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.Center
             ) {
                 team.effectCards.forEach { effect ->
                     EffectCardBadge(
                         effect = effect,
-                        onClicked = { onMarkEffectUsed(effect.id) }
+                        onClicked = { onMarkEffectUsed(effect.id) },
+                        widthDp = cardWidthDp,
+                        heightDp = cardHeightDp,
                     )
                 }
             }
@@ -124,37 +143,85 @@ fun TeamEffectCardsCard(
 @Composable
 fun EffectCardBadge(
     effect: EffectInstance,
+    widthDp: Int = 128,
+    heightDp: Int = 176,
     onClicked: () -> Unit = {}
 ) {
-    val bgColor = if (effect.used) Color(0xFF3A3A3A) else Color(0xFF2A4F6F)
-    val textColor = if (effect.used) Color(0xFF666666) else Color(0xFF00D4FF)
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !effect.used) { onClicked() },
-        shape = RoundedCornerShape(20.dp),
-        color = bgColor,
-        shadowElevation = if (effect.used) 0.dp else 1.dp
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(2.dp)
     ) {
-        val text = when (effect.type){
-            EffectType.SEE_FUTURE -> "XEM TRƯỚC"
-            EffectType.ADD_ONE_TURN -> "THÊM LƯỢT"
-            EffectType.SKIP -> "QUA LƯỢT"
-            EffectType.NOPE -> "VÔ HIỆU"
-            EffectType.DOUBLE_POINTS -> "NGÔI SAO HY VỌNG"
-            EffectType.ASSIGN -> "CHỈ ĐỊNH"
-            EffectType.STEAL -> "CƯỚP LƯỢT"
-            EffectType.GET_HELP -> "TRỢ GIÚP"
-
+        Box(
+            modifier = Modifier
+                .size(width = widthDp.dp, height = heightDp.dp)
+                .clickable(enabled = !effect.used) { onClicked() }
+                .alpha(if (effect.used) 0.3f else 1f)
+                .background(Color.Black, RoundedCornerShape(4.dp))
+                .border(
+                    width = 1.dp,
+                    color = if (effect.used) Color.Gray else Color(0xFF00D4FF),
+                    shape = RoundedCornerShape(4.dp)
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(id = getEffectDrawable(effect.type)),
+                contentDescription = effect.type.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit // Optimize loading: use Fit instead of FillBounds
+            )
+            
+            if (effect.used) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ĐÃ DÙNG",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
+        
+        // Show card name for clarity in QuestionPresentationScreen context
         Text(
-            text = text,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = textColor,
+            text = getEffectName(effect.type),
+            fontSize = 20.sp,
+            color = Color.White.copy(alpha = 0.8f),
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(64.dp).padding(top = 2.dp)
         )
     }
 }
 
+fun getEffectName(type: EffectType): String {
+    return when (type) {
+        EffectType.SEE_FUTURE -> "Nhìn Tương Lai"
+        EffectType.SKIP -> "Bỏ Lượt"
+        EffectType.ASSIGN -> "Tấn Công"
+        EffectType.STEAL -> "Giành Quyền"
+        EffectType.DOUBLE_POINTS -> "Sao Hy Vọng"
+        EffectType.ADD_ONE_TURN -> "Thêm Lượt"
+        EffectType.NOPE -> "Vô Hiệu"
+        EffectType.GET_HELP -> "Trợ Giúp"
+    }
+}
 
+fun getEffectDrawable(type: EffectType): Int {
+    return when (type) {
+        EffectType.SEE_FUTURE -> R.drawable.nhin_trc_tuong_lai
+        EffectType.SKIP -> R.drawable.bo_luot_choi
+        EffectType.ASSIGN -> R.drawable.tan_cong
+        EffectType.STEAL -> R.drawable.gianh_quyen_tra_loi
+        EffectType.DOUBLE_POINTS -> R.drawable.ngoi_sao_hy_vong
+        EffectType.ADD_ONE_TURN -> R.drawable.them_luot
+        EffectType.NOPE -> R.drawable.vo_hieu_hoa
+        EffectType.GET_HELP -> R.drawable.xin_quyen_tro_giup
+    }
+}

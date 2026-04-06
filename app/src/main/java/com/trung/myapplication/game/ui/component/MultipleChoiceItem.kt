@@ -66,16 +66,16 @@ fun MultipleChoiceItem(
             // Letter
             Text(
                 text = letter,
-                fontSize = 28.sp,
+                fontSize = 36.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color.White,
-                modifier = Modifier.width(48.dp)
+                modifier = Modifier.width(60.dp)
             )
 
             // Choice text
             Text(
                 text = text,
-                fontSize = 24.sp,
+                fontSize = 32.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
                 modifier = Modifier.weight(1f)
@@ -85,7 +85,7 @@ fun MultipleChoiceItem(
             if (isAnswered) {
                 Text(
                     text = if (isCorrectChoice) "✓" else "✗",
-                    fontSize = 32.sp,
+                    fontSize = 40.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )

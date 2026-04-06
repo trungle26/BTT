@@ -11,11 +11,12 @@ data class GameState(
     val activeTeamIndex: Int = 0,
     val stolenTurnTeamIndex: Int? = null,
     val activeEffect: EffectInstance? = null,
-    val timerMs: Long = 0L,
+    val timerMs: Long? = null,
     val roundsPerTeam: Int = 6,
     val gameOver: Boolean = false,
     val winner: Team? = null,
     val showingPresentationScreen: Boolean = false,
     val selectedCardIndex: Int? = null,
+    val showingRules: Boolean = true,
 )
 

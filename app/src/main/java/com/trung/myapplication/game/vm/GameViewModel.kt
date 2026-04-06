@@ -19,8 +19,8 @@ class GameViewModel : ViewModel() {
 
     private var timerJob: Job? = null
     private var remainingTimeMs = 20_000L // Track state outside the job
-    private var isPaused = false
     private var isDoublePoint = false
+    private var isOneMoreTurn = false
     private val roundsPerTeam = 6 // each team plays 6 turns by default (8*6 = 48)
 
     init {
@@ -35,16 +35,20 @@ class GameViewModel : ViewModel() {
         val effectCard = user.effectCards[idx]
         if (effectCard.used) return
         markEffectCardUsed(teamId, effectId)
-        _state.update {
-            it.copy(activeEffect = effectCard)
+
+        if (effectCard.type != EffectType.NOPE){
+            _state.update {
+                it.copy(activeEffect = effectCard)
+            }
         }
 
         when (effectCard.type) {
-            EffectType.SEE_FUTURE -> {
-            }
+            EffectType.SEE_FUTURE -> {}
+
             EffectType.GET_HELP -> {
-                pauseTimer()
+                timerJob?.cancel()
             }
+
             EffectType.STEAL -> {
                 _state.update {
                     it.copy(stolenTurnTeamIndex = teamId)
@@ -52,20 +56,61 @@ class GameViewModel : ViewModel() {
                 resetTimer()
                 isDoublePoint = false
             }
+
             EffectType.NOPE -> {
+                handleNope()
             }
-            EffectType.ASSIGN -> {
-            }
+
+            EffectType.ASSIGN -> {}
+
             EffectType.DOUBLE_POINTS -> {
                 isDoublePoint = true
             }
-            EffectType.ADD_ONE_TURN -> {
 
+            EffectType.ADD_ONE_TURN -> {
+                isOneMoreTurn = true
             }
+
             EffectType.SKIP -> {
                 // Skip turn
                 advanceTurn()
             }
+        }
+    }
+
+    private fun handleNope() {
+        when (_state.value.activeEffect?.type) {
+            EffectType.SEE_FUTURE -> {}
+            EffectType.GET_HELP -> {
+                resetTimer()
+            }
+
+            EffectType.STEAL -> {
+                _state.update { it.copy(stolenTurnTeamIndex = null) }
+                resetTimer()
+            }
+
+            EffectType.ADD_ONE_TURN -> {
+                isOneMoreTurn = false
+            }
+
+            EffectType.DOUBLE_POINTS -> {
+                isDoublePoint = false
+            }
+
+            EffectType.SKIP -> {
+                resetTimer()
+                if (!isOneMoreTurn) {
+                    _state.update { st ->
+                        val next = (st.activeTeamIndex - 1) % st.teams.size
+                        st.copy(
+                            activeTeamIndex = next,
+                        )
+                    }
+                }
+            }
+
+            else -> {}
         }
     }
 
@@ -92,7 +137,6 @@ class GameViewModel : ViewModel() {
             teams = teams,
             activeTeamIndex = 0,
             selectedCardIndex = null,
-            timerMs = 0L,
             roundsPerTeam = roundsPerTeam
         )
     }
@@ -108,8 +152,8 @@ class GameViewModel : ViewModel() {
         when (_state.value.cards[index]) {
             is BombCard -> {
                 // immediate -10
-                applyScoreToActive(-10)
-                advanceTurn()
+                applyScoreToActive(-20)
+                markRevealed(index)
             }
 
             is QuestionCard -> {
@@ -138,7 +182,7 @@ class GameViewModel : ViewModel() {
     private fun applyScoreToActive(delta: Int) {
         _state.update { st ->
             val teams = st.teams.toMutableList()
-            val idx = st.activeTeamIndex
+            val idx = st.stolenTurnTeamIndex ?: st.activeTeamIndex
             val t = teams[idx]
             teams[idx] = t.copy(score = t.score + delta)
             st.copy(teams = teams)
@@ -146,34 +190,27 @@ class GameViewModel : ViewModel() {
     }
 
     private fun advanceTurn() {
-        timerJob?.cancel()
-        _state.update { st ->
-            val next = (st.activeTeamIndex + 1) % st.teams.size
-            // increment rounds implicitly via resolved cards; we just rotate turn
-            st.copy(
-                activeTeamIndex = next,
-            )
+        cancelTimer()
+        if (!isOneMoreTurn) {
+            _state.update { st ->
+                val next = (st.activeTeamIndex + 1) % st.teams.size
+                st.copy(
+                    activeTeamIndex = next,
+                )
+            }
         }
     }
 
     private fun startQuestionTimer() {
         timerJob?.cancel()
-        isPaused = false
 
         timerJob = viewModelScope.launch {
             while (remainingTimeMs > 0) {
-                if (!isPaused) {
-                    // Update the state
-                    _state.update { it.copy(timerMs = remainingTimeMs) }
+                _state.update { it.copy(timerMs = remainingTimeMs) }
 
-                    // Decrement and wait
-                    delay(200L)
-                    remainingTimeMs -= 200L
-                } else {
-                    // When paused, we "yield" to keep the coroutine alive
-                    // but inactive until isPaused becomes false
-                    delay(500L)
-                }
+                // Decrement and wait
+                delay(200L)
+                remainingTimeMs -= 200L
             }
 
             if (remainingTimeMs <= 0) {
@@ -183,18 +220,15 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    fun pauseTimer() {
-        isPaused = true
-    }
-
-    fun resumeTimer() {
-        isPaused = false
-    }
-
     fun resetTimer() {
         timerJob?.cancel()
         remainingTimeMs = 20_000L
         startQuestionTimer()
+    }
+
+    fun cancelTimer(){
+        timerJob?.cancel()
+        remainingTimeMs = 20_000L
     }
 
     fun submitAnswer(choiceIndex: Int) {
@@ -203,39 +237,35 @@ class GameViewModel : ViewModel() {
         if (currentCard !is QuestionCard) return
 
         timerJob?.cancel()
-        val activeTeam = _state.value.teams[_state.value.activeTeamIndex]
-        val doubleFlagIdx = activeTeam.effectCards.indexOfFirst { it.id.startsWith("__double_next_") }
-        var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -10
-        if (doubleFlagIdx != -1) {
-            points *= 2
-            // Remove the double flag after use
-            val teams = _state.value.teams.toMutableList()
-            val t = teams[_state.value.activeTeamIndex]
-            val hand = t.effectCards.toMutableList()
-            hand.removeAt(doubleFlagIdx)
-            teams[_state.value.activeTeamIndex] = t.copy(effectCards = hand)
-            _state.update { it.copy(teams = teams) }
-        }
+        var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -5
+        if (isDoublePoint) points *= 2
         applyScoreToActive(points)
         markRevealed(selectedCardIndex)
-        advanceTurn()
     }
 
     private fun onAnswerTimeout() {
-        applyScoreToActive(-10)
-        _state.value.selectedCardIndex?.let { markRevealed(it) }
-        advanceTurn()
+        submitAnswer(-1)
     }
 
     fun closePresentationScreen() {
-        timerJob?.cancel()
-        state.value.selectedCardIndex?.let{
-            if(_state.value.cards[it] is BombCard){
-                markRevealed(it)
+        cancelTimer()
+        _state.value.selectedCardIndex?.let {
+            if (_state.value.cards[it].isRevealed) {
+                if (isOneMoreTurn) {
+                    isOneMoreTurn = false
+                } else {
+                    advanceTurn()
+                }
             }
         }
-        _state.update { it.copy(showingPresentationScreen = false, selectedCardIndex = null) }
-        commitState()
+        _state.update {
+            it.copy(
+                showingPresentationScreen = false,
+                selectedCardIndex = null,
+                stolenTurnTeamIndex = null,
+                timerMs = null,
+            )
+        }
     }
 
     fun addPointsManually(delta: Int, teamId: Int) {
@@ -247,7 +277,13 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    fun markEffectCardUsed(teamId: Int, effectId: String) {
+    fun closeRulesScreen() {
+        _state.update {
+            it.copy(showingRules = false)
+        }
+    }
+
+    private fun markEffectCardUsed(teamId: Int, effectId: String) {
         _state.update { st ->
             val teams = st.teams.toMutableList()
             val team = teams[teamId]
