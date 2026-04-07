@@ -1,6 +1,7 @@
 package com.trung.myapplication.game.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,16 +9,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,8 +30,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,11 +43,12 @@ import com.trung.myapplication.game.model.Card
 import com.trung.myapplication.game.model.EffectInstance
 import com.trung.myapplication.game.model.EffectType
 import com.trung.myapplication.game.model.QuestionCard
+import com.trung.myapplication.game.model.QuestionKind
 import com.trung.myapplication.game.model.Team
 import com.trung.myapplication.game.ui.component.CardView
 import com.trung.myapplication.game.ui.section.AllTeamsEffectCardSection
-import com.trung.myapplication.game.ui.section.TeamScoreCard
 import com.trung.myapplication.game.ui.section.TeamScoreSection
+import com.trung.myapplication.game.ui.util.SfxPlayer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,27 +58,21 @@ fun GameScreen(
     activeTeamIndex: Int,
     onCardClicked: (Int) -> Unit,
     onMarkEffectUsed: (teamId: Int, effectId: String) -> Unit = { _, _ -> },
+    onAddPoints: (delta: Int, teamId: Int) -> Unit = { _, _ -> },
+    onShiftTeam: (delta: Int) -> Unit = {},
 ) {
-    val showEffectCardsScreen = remember { mutableStateOf(false) }
+    val showEffectCardsSheet = remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
-    if (showEffectCardsScreen.value) {
-        // Full-screen effect cards view
-        EffectCardsFullScreen(
-            teams = teams,
-            activeTeamIndex = activeTeamIndex,
-            onMarkEffectUsed = onMarkEffectUsed,
-            onClose = { showEffectCardsScreen.value = false }
-        )
-    } else {
-        // Main game screen
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color(0xFF0A0E27)  // Deep dark blue background
-        ) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = GameUiColors.Background
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(20.dp)
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
             ) {
                 // Header Section
                 Surface(
@@ -78,7 +80,7 @@ fun GameScreen(
                         .fillMaxWidth()
                         .padding(bottom = 12.dp),
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1A1F3A),
+                    color = GameUiColors.SurfaceHeader,
                     shadowElevation = 4.dp
                 ) {
                     Column(
@@ -90,7 +92,7 @@ fun GameScreen(
                             text = "ĐIỂM SỐ",
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF00D4FF),
+                            color = GameUiColors.LabelPrimary,
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
 
@@ -104,9 +106,9 @@ fun GameScreen(
                 // Board Title
                 Text(
                     text = "CARD BOARD",
-                    fontSize = 28.sp,
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF00D4FF),
+                    color = GameUiColors.TitleGold,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
 
@@ -117,7 +119,7 @@ fun GameScreen(
                         .fillMaxWidth()
                         .padding(8.dp),
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1A1F3A),
+                    color = GameUiColors.SurfaceBoard,
                     shadowElevation = 4.dp
                 ) {
                     LazyVerticalGrid(
@@ -125,14 +127,17 @@ fun GameScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         itemsIndexed(cards) { index, card ->
                             CardView(
                                 card = card,
                                 index = index,
-                                onClick = { onCardClicked(index) },
+                                onClick = {
+                                    SfxPlayer.playByName(context, "sfx_card_flip")
+                                    onCardClicked(index)
+                                },
                             )
                         }
                     }
@@ -145,16 +150,19 @@ fun GameScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
-                        .clickable { showEffectCardsScreen.value = true },
+                        .clickable {
+                            SfxPlayer.playByName(context, "sfx_open_sheet")
+                            showEffectCardsSheet.value = true
+                        },
                     shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF00D4FF),
+                    color = GameUiColors.CtaBar,
                     shadowElevation = 4.dp
                 ) {
                     Text(
                         text = "📋 VIEW EFFECT CARDS",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black,
+                        color = GameUiColors.TextOnAccent,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
@@ -162,67 +170,74 @@ fun GameScreen(
                     )
                 }
             }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        onShiftTeam(-1)
+                    },
+                    containerColor = GameUiColors.FabTeam,
+                    contentColor = Color.White,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Text(text = "T-", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                FloatingActionButton(
+                    onClick = {
+                        onShiftTeam(1)
+                    },
+                    containerColor = GameUiColors.FabTeam,
+                    contentColor = Color.White,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Text(text = "T+", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                FloatingActionButton(
+                    onClick = {
+                        onAddPoints(-5, activeTeamIndex)
+                    },
+                    containerColor = GameUiColors.FabMinus,
+                    contentColor = Color.White,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.KeyboardArrowDown, contentDescription = "-5")
+                }
+                FloatingActionButton(
+                    onClick = {
+                        onAddPoints(5, activeTeamIndex)
+                    },
+                    containerColor = GameUiColors.FabPlus,
+                    contentColor = Color.Black,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.Add, contentDescription = "+5")
+                }
+            }
         }
     }
-}
-
-@Composable
-private fun EffectCardsFullScreen(
-    teams: List<Team>,
-    activeTeamIndex: Int,
-    onMarkEffectUsed: (teamId: Int, effectId: String) -> Unit,
-    onClose: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF0A0E27)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp)
+    if (showEffectCardsSheet.value) {
+        ModalBottomSheet(
+            onDismissRequest = { showEffectCardsSheet.value = false },
+            sheetMaxWidth = Dp.Unspecified,
+            containerColor = GameUiColors.SheetBackground,
+            tonalElevation = 8.dp
         ) {
-            // Header with back button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.align(Alignment.CenterVertically)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Color.White,
-                        modifier = Modifier
-                            .height(48.dp)
-                            .fillMaxWidth()
-                    )
-                }
-
-                Text(
-                    text = "TEAM EFFECT CARDS",
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF00D4FF),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Effect Cards Section (full width)
             AllTeamsEffectCardSection(
                 teams = teams,
                 activeTeamIndex = activeTeamIndex,
                 onMarkEffectUsed = onMarkEffectUsed,
-                cardWidthDp = 256,
-                cardHeightDp = 352,
+                cardWidthDp = 148,
+                cardHeightDp = 196,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(620.dp)
+                    .padding(bottom = 18.dp)
             )
         }
     }
@@ -252,6 +267,7 @@ fun GameScreenPreview() {
                 text = "Question $i", 
                 choices = listOf("A", "B", "C", "D"), 
                 correctChoiceIndex = 0, 
+                kind = QuestionKind.MULTIPLE_CHOICE,
                 isRevealed = false
             )
             else -> QuestionCard(
@@ -259,6 +275,7 @@ fun GameScreenPreview() {
                 text = "Question $i", 
                 choices = listOf("A", "B", "C", "D"), 
                 correctChoiceIndex = 0, 
+                kind = QuestionKind.MULTIPLE_CHOICE,
                 isRevealed = i < 15
             )
         }
@@ -269,6 +286,8 @@ fun GameScreenPreview() {
         cards = sampleCards,
         activeTeamIndex = 0,
         onCardClicked = {},
-        onMarkEffectUsed = { _, _ -> }
+        onMarkEffectUsed = { _, _ -> },
+        onAddPoints = { _, _ -> },
+        onShiftTeam = {}
     )
 }

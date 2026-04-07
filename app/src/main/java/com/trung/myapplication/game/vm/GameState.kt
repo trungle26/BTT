@@ -17,6 +17,8 @@ data class GameState(
     val winner: Team? = null,
     val showingPresentationScreen: Boolean = false,
     val selectedCardIndex: Int? = null,
+    val selectedChoiceIndex: Int? = null,
+    val answerTimedOut: Boolean = false,
     val showingRules: Boolean = true,
 )
 

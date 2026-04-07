@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +33,7 @@ fun ControlPanel(onAddPoints: (Int) -> Unit) {
             .padding(end = 24.dp, bottom = 24.dp)
             .heightIn(min = 120.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF1A1F3A),
+        color = GameUiColors.SurfaceCard,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -46,7 +47,7 @@ fun ControlPanel(onAddPoints: (Int) -> Unit) {
                 "SCORE",
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF999999),
+                color = GameUiColors.TextMuted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -55,17 +56,17 @@ fun ControlPanel(onAddPoints: (Int) -> Unit) {
             CompactPointButton(
                 label = "-10",
                 onClick = { onAddPoints(-10) },
-                backgroundColor = Color(0xFFFF6B6B)
+                backgroundColor = GameUiColors.FabMinus
             )
             CompactPointButton(
                 label = "+10",
                 onClick = { onAddPoints(+10) },
-                backgroundColor = Color(0xFF4CAF50)
+                backgroundColor = GameUiColors.CtaBarAlt
             )
             CompactPointButton(
                 label = "+20",
                 onClick = { onAddPoints(+20) },
-                backgroundColor = Color(0xFF2196F3)
+                backgroundColor = GameUiColors.ChoiceTimeout
             )
         }
     }

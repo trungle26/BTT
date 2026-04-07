@@ -18,19 +18,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
 fun MultipleChoiceItem(
-    letter: String, text: String, isAnswered: Boolean, isCorrectChoice: Boolean,
+    letter: String,
+    text: String,
+    isAnswered: Boolean,
+    selectedChoiceIndex: Int?,
+    thisChoiceIndex: Int,
+    isTimeout: Boolean,
+    isCorrectChoice: Boolean,
     onClick: () -> Unit
 ) {
     var isClicked by remember { mutableStateOf(false) }
+    val isSelected = selectedChoiceIndex == thisChoiceIndex
     val backgroundColor = when {
-        isAnswered && isCorrectChoice -> Color(0xFF4CAF50)  // Green for correct
-        isClicked && !isCorrectChoice -> Color(0xFFD32F2F)  // Red for wrong
-        else -> Color(0xFF2A3F5F)  // Blue default
+        isAnswered && isTimeout && isCorrectChoice -> GameUiColors.ChoiceTimeout
+        isAnswered && !isTimeout && isCorrectChoice -> GameUiColors.ChoiceCorrect
+        isAnswered && isSelected && isCorrectChoice -> GameUiColors.ChoiceCorrect
+        isAnswered && isSelected && !isCorrectChoice -> GameUiColors.ChoiceWrong
+        isClicked && !isCorrectChoice -> GameUiColors.ChoiceClickWrong
+        else -> GameUiColors.ChoiceDefault
     }
 
     Card(
@@ -84,7 +95,13 @@ fun MultipleChoiceItem(
             // Status indicator
             if (isAnswered) {
                 Text(
-                    text = if (isCorrectChoice) "✓" else "✗",
+                    text = when {
+                        isTimeout && isCorrectChoice -> "⏱"
+                        isAnswered && !isTimeout && isCorrectChoice -> "✓"
+                        isSelected && isCorrectChoice -> "✓"
+                        isSelected && !isCorrectChoice -> "✗"
+                        else -> ""
+                    },
                     fontSize = 40.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White

@@ -1,5 +1,7 @@
 package com.trung.myapplication.game.ui.section
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,8 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,7 +52,7 @@ fun AllTeamsEffectCardSection(
         modifier = modifier
             .fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF1A1F3A),
+        color = GameUiColors.EffectSectionBg,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -61,7 +65,7 @@ fun AllTeamsEffectCardSection(
                 text = "THẺ CHỨC NĂNG",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF00D4FF),
+                color = GameUiColors.EffectTitle,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
@@ -96,15 +100,21 @@ fun TeamEffectCardsCard(
     isActive: Boolean,
     onMarkEffectUsed: (String) -> Unit = {}
 ) {
-    val borderColor = if (isActive) Color(0xFF4CAF50) else Color(0xFF00D4FF)
+    val borderColor = if (isActive) GameUiColors.EffectBorderActive else GameUiColors.EffectBorderIdle
     val borderWidth = if (isActive) 3.dp else 1.dp
+    val cardScale = animateFloatAsState(
+        targetValue = if (isActive) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 300),
+        label = "teamEffectScale"
+    )
 
     Surface(
         modifier = Modifier
+            .scale(cardScale.value)
             .fillMaxWidth()
             .border(borderWidth, borderColor, RoundedCornerShape(10.dp)),
         shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF0F1525),
+        color = GameUiColors.EffectTeamInner,
         shadowElevation = 2.dp
     ) {
         Column(
@@ -159,7 +169,7 @@ fun EffectCardBadge(
                 .background(Color.Black, RoundedCornerShape(4.dp))
                 .border(
                     width = 1.dp,
-                    color = if (effect.used) Color.Gray else Color(0xFF00D4FF),
+                    color = if (effect.used) Color.Gray else GameUiColors.EffectBadgeBorder,
                     shape = RoundedCornerShape(4.dp)
                 ),
             contentAlignment = Alignment.Center,
@@ -168,7 +178,7 @@ fun EffectCardBadge(
                 painter = painterResource(id = getEffectDrawable(effect.type)),
                 contentDescription = effect.type.name,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit // Optimize loading: use Fit instead of FillBounds
+                contentScale = ContentScale.Fit
             )
             
             if (effect.used) {
@@ -192,7 +202,7 @@ fun EffectCardBadge(
         Text(
             text = getEffectName(effect.type),
             fontSize = 20.sp,
-            color = Color.White.copy(alpha = 0.8f),
+            color = GameUiColors.TextPrimary.copy(alpha = 0.85f),
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
             modifier = Modifier.width(64.dp).padding(top = 2.dp)

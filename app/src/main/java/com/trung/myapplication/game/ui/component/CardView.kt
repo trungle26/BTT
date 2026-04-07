@@ -1,5 +1,8 @@
 package com.trung.myapplication.game.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,8 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -32,21 +37,32 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
     val revealed = card.isRevealed
 
     // High-intensity neon colors
-    val neonColor = when {
-        !revealed -> Color(0xFF00FBFF)  // Brighter Electric Cyan
-        card is BombCard -> Color(0xFFFF0055)  // Intense Neon Pink
-        else -> Color(0xFF39FF14)  // Classic Neon Green
+    val targetColor = when {
+        !revealed -> GameUiColors.CardNeonUnrevealed
+        card is BombCard -> GameUiColors.CardNeonBomb
+        else -> GameUiColors.CardNeonRevealed
     }
+    val neonColor = animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(250),
+        label = "cardNeonColor"
+    )
+    val cardScale = animateFloatAsState(
+        targetValue = if (revealed) 0.98f else 1f,
+        animationSpec = tween(220),
+        label = "cardScale"
+    )
 
     Box(
         modifier = Modifier
+            .scale(cardScale.value)
             .padding(4.dp)
             .aspectRatio(1f)
             .clickable { onClick() }
-            .background(Color(0xFF02040A), RoundedCornerShape(12.dp))
+            .background(GameUiColors.CardInnerBg, RoundedCornerShape(12.dp))
             .border(
                 width = 3.dp,
-                color = neonColor,
+                color = neonColor.value,
                 shape = RoundedCornerShape(12.dp)
             )
     ) {
@@ -57,7 +73,7 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
                 .padding(2.dp)
                 .border(
                     width = 2.dp,
-                    color = neonColor.copy(alpha = 0.3f),
+                    color = neonColor.value.copy(alpha = 0.25f),
                     shape = RoundedCornerShape(10.dp)
                 )
         )
@@ -70,12 +86,12 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
                 // Large, glowing index for TV visibility
                 Text(
                     text = "#${index + 1}",
-                    color = neonColor,
+                    color = neonColor.value,
                     fontSize = 48.sp, // Large size
                     fontWeight = FontWeight.ExtraBold,
                     style = TextStyle(
                         shadow = Shadow(
-                            color = neonColor,
+                            color = neonColor.value,
                             blurRadius = 30f // Strong glow
                         )
                     )
@@ -89,7 +105,7 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
                         fontWeight = FontWeight.Black,
                         style = TextStyle(
                             shadow = Shadow(
-                                color = neonColor,
+                                color = neonColor.value,
                                 blurRadius = 20f
                             )
                         )
@@ -123,6 +139,7 @@ fun CardViewPreview() {
                         text = "",
                         choices = listOf(),
                         correctChoiceIndex = 0,
+                        kind = com.trung.myapplication.game.model.QuestionKind.MULTIPLE_CHOICE,
                         isRevealed = false
                     ),
                     index = 1,
@@ -138,6 +155,7 @@ fun CardViewPreview() {
                         text = "What is Kotlin?",
                         choices = listOf(),
                         correctChoiceIndex = 0,
+                        kind = com.trung.myapplication.game.model.QuestionKind.MULTIPLE_CHOICE,
                         isRevealed = true
                     ),
                     index = 2,

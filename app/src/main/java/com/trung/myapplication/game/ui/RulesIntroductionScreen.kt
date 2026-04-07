@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trung.myapplication.R
 import com.trung.myapplication.game.model.EffectType
+import com.trung.myapplication.game.ui.theme.GameUiColors
 import com.trung.myapplication.game.ui.section.getEffectDrawable
 import com.trung.myapplication.game.ui.section.getEffectName
 import kotlinx.coroutines.launch
@@ -54,7 +55,7 @@ fun RulesIntroductionScreen(onStartGame: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F1525))
+            .background(GameUiColors.Background)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
@@ -108,7 +109,7 @@ fun RulesIntroductionScreen(onStartGame: () -> Unit) {
                     text = "${pagerState.currentPage + 1} / 4",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF00D4FF)
+                    color = GameUiColors.LabelPrimary
                 )
 
                 if (pagerState.currentPage < 3) {
@@ -118,7 +119,7 @@ fun RulesIntroductionScreen(onStartGame: () -> Unit) {
                                 pagerState.animateScrollToPage(pagerState.currentPage + 1)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00D4FF)),
+                        colors = ButtonDefaults.buttonColors(containerColor = GameUiColors.CtaBar),
                         modifier = Modifier.size(width = 120.dp, height = 48.dp)
                     ) {
                         Text(
@@ -137,7 +138,7 @@ fun RulesIntroductionScreen(onStartGame: () -> Unit) {
                 } else {
                     Button(
                         onClick = onStartGame,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                        colors = ButtonDefaults.buttonColors(containerColor = GameUiColors.CtaBarAlt),
                         modifier = Modifier.size(width = 160.dp, height = 48.dp)
                     ) {
                         Text(
@@ -170,7 +171,7 @@ private fun RulePageGameplay() {
             .fillMaxSize()
             .padding(20.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF1A1F3A),
+        color = GameUiColors.RulesSurface,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -184,7 +185,7 @@ private fun RulePageGameplay() {
                 text = "1. Quy tắc trò chơi",
                 fontSize = 64.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF00D4FF)
+                color = GameUiColors.LabelPrimary
             )
             Text(
                 text = "Màn hình sẽ hiển thị 48 ô vuông chứa bí mật ngẫu nhiên.",
@@ -195,7 +196,7 @@ private fun RulePageGameplay() {
                 text = "Mỗi ô vuông có thể là:",
                 fontSize = 58.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF00D4FF)
+                color = GameUiColors.LabelPrimary
             )
             Row(
                 modifier = Modifier.height(300.dp),
@@ -217,7 +218,7 @@ private fun RulePageGameplay() {
                 text = "Hệ thống điểm số:",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF00D4FF)
+                color = GameUiColors.LabelPrimary
             )
             Row(
                 modifier = Modifier.height(300.dp),
@@ -239,7 +240,7 @@ private fun RulePagePowerUps() {
             .fillMaxSize()
             .padding(20.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF1A1F3A),
+        color = GameUiColors.RulesSurface,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -252,12 +253,12 @@ private fun RulePagePowerUps() {
                 text = "2. Hệ thống Lá bài Chức năng",
                 fontSize = 44.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF00D4FF)
+                color = GameUiColors.LabelPrimary
             )
             Text(
                 text = "Mỗi đội nhận 3 thẻ ngẫu nhiên. Sử dụng 1 lần duy nhất.",
                 fontSize = 24.sp,
-                color = Color(0xFFFFD700),
+                color = GameUiColors.TitleGold,
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -294,7 +295,7 @@ private fun PowerUpGridItem(info: PowerUpInfo) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier
-            .background(Color(0xFF2A3A5A), RoundedCornerShape(12.dp))
+            .background(GameUiColors.RulesTile, RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
         Surface(
@@ -313,14 +314,14 @@ private fun PowerUpGridItem(info: PowerUpInfo) {
             text = getEffectName(info.type),
             fontSize = 32.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF00D4FF),
+            color = GameUiColors.LabelPrimary,
             textAlign = TextAlign.Center
         )
         Text(text = "Chức năng: " + info.desc, fontSize = 30.sp, color = Color.White, textAlign = TextAlign.Center)
         Text(
             text = "Thời điểm: " + info.timing,
             fontSize = 25.sp,
-            color = Color(0xFFB0BEC5),
+            color = GameUiColors.RulesMuted,
             textAlign = TextAlign.Center
         )
     }
@@ -333,7 +334,7 @@ private fun RulePageSummary() {
             .fillMaxSize()
             .padding(20.dp),
         shape = RoundedCornerShape(12.dp),
-        color = Color(0xFF1A1F3A),
+        color = GameUiColors.RulesSurface,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -347,7 +348,7 @@ private fun RulePageSummary() {
                 text = "Các bạn đã sẵn sàng chưa?",
                 fontSize = 68.sp,
                 fontWeight = FontWeight.ExtraBold,
-                color = Color(0xFF00D4FF),
+                color = GameUiColors.LabelPrimary,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(20.dp))
@@ -366,7 +367,7 @@ private fun RulePageSummary() {
             Text(
                 text = "Các đội hãy chơi một cách công bằng và vui vẻ nhé!",
                 fontSize = 46.sp,
-                color = Color(0xFFFFD700),
+                color = GameUiColors.TitleGold,
                 textAlign = TextAlign.Center,
                 fontWeight = FontWeight.SemiBold
             )
@@ -379,7 +380,7 @@ private fun RuleItem(modifier: Modifier, title: String, description: String) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF2A3A5A), RoundedCornerShape(8.dp))
+            .background(GameUiColors.RulesTile, RoundedCornerShape(8.dp))
             .padding(6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -388,7 +389,7 @@ private fun RuleItem(modifier: Modifier, title: String, description: String) {
             text = title,
             fontSize = 54.sp,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF00D4FF),
+            color = GameUiColors.LabelPrimary,
             textAlign = TextAlign.Center
         )
         Text(
@@ -406,7 +407,7 @@ private fun SummaryPoint(text: String, emoji: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF2A3A5A), RoundedCornerShape(8.dp))
+            .background(GameUiColors.RulesTile, RoundedCornerShape(8.dp))
             .padding(20.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically

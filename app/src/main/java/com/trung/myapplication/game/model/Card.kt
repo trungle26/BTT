@@ -6,11 +6,19 @@ sealed class Card {
     abstract val isRevealed: Boolean
 }
 
+enum class QuestionKind {
+    MULTIPLE_CHOICE,
+    ESSAY,
+    REAL_WORLD_CHALLENGE
+}
+
 data class QuestionCard(
     override val id: String,
     val text: String,
     val choices: List<String>,
     val correctChoiceIndex: Int,
+    val correctAnswerText: String? = null,
+    val kind: QuestionKind = QuestionKind.MULTIPLE_CHOICE,
     override val isRevealed: Boolean,
     val isChallenge: Boolean = false
 ) : Card()

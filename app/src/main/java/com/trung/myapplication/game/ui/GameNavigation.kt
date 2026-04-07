@@ -20,14 +20,18 @@ fun GameNavigation() {
             )
         }
         state.showingPresentationScreen && selectedCardIndex != null && selectedCardIndex >= 0 && selectedCardIndex < cards.size -> {
+            val activeIdx = state.stolenTurnTeamIndex ?: state.activeTeamIndex
             QuestionPresentationScreen(
                 card = cards[selectedCardIndex],
                 teams = state.teams,
-                activeTeamIndex = state.stolenTurnTeamIndex ?: state.activeTeamIndex,
+                activeTeamIndex = activeIdx,
                 timerMs = state.timerMs,
+                selectedChoiceIndex = state.selectedChoiceIndex,
+                answerTimedOut = state.answerTimedOut,
                 onClose = { vm.closePresentationScreen() },
-                onAddPoints = { delta: Int -> vm.addPointsManually(delta, state.activeTeamIndex) },
+                onAddPoints = { delta: Int -> vm.addPointsManually(delta, activeIdx) },
                 onSelectChoice = { vm.submitAnswer(it) },
+                onShiftTeam = { delta: Int -> vm.shiftActiveTeam(delta) },
                 onMarkEffectUsed = { teamId: Int, effectId: String ->
                     vm.useEffectCard(
                         teamId,
@@ -42,7 +46,12 @@ fun GameNavigation() {
                 teams = state.teams,
                 cards = state.cards,
                 activeTeamIndex = state.stolenTurnTeamIndex ?: state.activeTeamIndex,
-                onCardClicked = { index -> vm.onCardClicked(index) }
+                onCardClicked = { index -> vm.onCardClicked(index) },
+                onMarkEffectUsed = { teamId: Int, effectId: String ->
+                    vm.useEffectCard(teamId, effectId)
+                },
+                onAddPoints = { delta, teamId -> vm.addPointsManually(delta, teamId) },
+                onShiftTeam = { delta -> vm.shiftActiveTeam(delta) }
             )
         }
     }

@@ -146,6 +146,7 @@ class GameViewModel : ViewModel() {
             it.copy(
                 showingPresentationScreen = true,
                 selectedCardIndex = index,
+                selectedChoiceIndex = null,
             )
         }
 
@@ -157,7 +158,13 @@ class GameViewModel : ViewModel() {
             }
 
             is QuestionCard -> {
-                startQuestionTimer()
+                val question = _state.value.cards[index] as QuestionCard
+                if (question.kind == QuestionKind.MULTIPLE_CHOICE || question.kind == QuestionKind.ESSAY) {
+                    startQuestionTimer()
+                } else {
+                    timerJob?.cancel()
+                    _state.update { st -> st.copy(timerMs = null) }
+                }
             }
         }
     }
@@ -237,13 +244,30 @@ class GameViewModel : ViewModel() {
         if (currentCard !is QuestionCard) return
 
         timerJob?.cancel()
-        var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -5
-        if (isDoublePoint) points *= 2
-        applyScoreToActive(points)
+        val didTimeout = choiceIndex < 0
+        val selectedChoice = if (choiceIndex >= 0) choiceIndex else null
+        if (currentCard.kind == QuestionKind.MULTIPLE_CHOICE) {
+            var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -5
+            if (isDoublePoint) points *= 2
+            applyScoreToActive(points)
+        }
+        _state.update { st ->
+            st.copy(
+                selectedChoiceIndex = selectedChoice,
+                answerTimedOut = didTimeout
+            )
+        }
         markRevealed(selectedCardIndex)
     }
 
     private fun onAnswerTimeout() {
+        val selectedCardIndex = _state.value.selectedCardIndex ?: return
+        val currentCard = _state.value.cards.getOrNull(selectedCardIndex)
+        if (currentCard is QuestionCard && currentCard.kind == QuestionKind.ESSAY) {
+            timerJob?.cancel()
+            markRevealed(selectedCardIndex)
+            return
+        }
         submitAnswer(-1)
     }
 
@@ -262,6 +286,8 @@ class GameViewModel : ViewModel() {
             it.copy(
                 showingPresentationScreen = false,
                 selectedCardIndex = null,
+                selectedChoiceIndex = null,
+                answerTimedOut = false,
                 stolenTurnTeamIndex = null,
                 timerMs = null,
             )
@@ -274,6 +300,15 @@ class GameViewModel : ViewModel() {
             val t = teams[teamId]
             teams[teamId] = t.copy(score = t.score + delta)
             st.copy(teams = teams)
+        }
+    }
+
+    fun shiftActiveTeam(delta: Int) {
+        _state.update { st ->
+            if (st.teams.isEmpty()) return@update st
+            val n = st.teams.size
+            val next = ((st.activeTeamIndex + delta) % n + n) % n
+            st.copy(activeTeamIndex = next, stolenTurnTeamIndex = null)
         }
     }
 
