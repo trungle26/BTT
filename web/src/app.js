@@ -1,11 +1,13 @@
 import { GameViewModel } from "./gameViewModel.js";
-import { EFFECT_META, QuestionKind } from "./models.js";
+import { EFFECT_META, EffectType, QuestionKind } from "./models.js";
 import { SfxPlayer } from "./sfxPlayer.js";
 
 const app = document.getElementById("app");
 const vm = new GameViewModel();
 const sfx = new SfxPlayer();
 let mediaSnapshot = new Map();
+let previousState = null;
+let discussionVideoPendingEnd = false;
 const persistentDiscussionShell = document.createElement("div");
 persistentDiscussionShell.className = "discussion-shell";
 persistentDiscussionShell.innerHTML = `
@@ -15,11 +17,16 @@ persistentDiscussionShell.innerHTML = `
     data-persistent-media="discussion-video"
     src="./assets/media/get_help.mp4"
     autoplay
-    muted
-    loop
     playsinline
+    preload="auto"
   ></video>
 `;
+const persistentDiscussionVideo = persistentDiscussionShell.querySelector("video");
+persistentDiscussionVideo.addEventListener("ended", () => {
+  discussionVideoPendingEnd = false;
+  render(vm.state);
+  syncPersistentDiscussionVideo(vm.state);
+});
 
 function esc(text) {
   return String(text)
@@ -32,6 +39,75 @@ function esc(text) {
 
 function activeTeamIndexOf(state) {
   return state.stolenTurnTeamIndex ?? state.activeTeamIndex;
+}
+
+function selectedQuestionCard(state) {
+  if (state.selectedCardIndex == null) return null;
+  const card = state.cards[state.selectedCardIndex];
+  return card?.type === "QUESTION" ? card : null;
+}
+
+function getEffectMeta(effectType) {
+  const fallback = {
+    name: effectType ?? "UNKNOWN EFFECT",
+    image: "nhin_trc_tuong_lai.jpg",
+    desc: "Chưa có mô tả.",
+    timing: "Chưa xác định.",
+    usability: "Chưa xác định.",
+  };
+  return { ...fallback, ...(EFFECT_META[effectType] ?? {}) };
+}
+
+function getEffectAvailability(state, teamId, effect) {
+  if (effect.used) return { usable: false, reason: "Da su dung" };
+
+  const activeTeamId = activeTeamIndexOf(state);
+  const isOwnerTurn = teamId === state.activeTeamIndex;
+  const isCurrentResponder = teamId === activeTeamId;
+  const card = selectedQuestionCard(state);
+  const isBoardScreen = !state.showingPresentationScreen && !state.showingStandings && !state.showingRules;
+  const isQuestionScreen = state.showingPresentationScreen && !!card;
+  const isQuestionOpen = isQuestionScreen && !card.isRevealed;
+  const hasAnswerSelected = state.selectedChoiceIndex != null;
+  const selectedAnswerIsWrong =
+    card?.kind === QuestionKind.MULTIPLE_CHOICE &&
+    hasAnswerSelected &&
+    state.selectedChoiceIndex !== card.correctChoiceIndex;
+
+  switch (effect.type) {
+    case EffectType.SEE_FUTURE:
+      return isBoardScreen && isOwnerTurn
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung truoc khi chon o trong luot minh" };
+    case EffectType.GET_HELP:
+      return isQuestionOpen && isCurrentResponder
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung sau khi mo cau hoi cua doi dang choi" };
+    case EffectType.STEAL:
+      return isQuestionOpen && selectedAnswerIsWrong && !isCurrentResponder
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung khi doi khac tra loi sai" };
+    case EffectType.NOPE:
+      return state.activeEffect
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung khi co the khac dang kich hoat" };
+    case EffectType.ASSIGN:
+      return { usable: false, reason: "Chua ho tro trong ban web hien tai" };
+    case EffectType.DOUBLE_POINTS:
+      return isQuestionOpen && isCurrentResponder && !hasAnswerSelected
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung truoc khi tra loi" };
+    case EffectType.ADD_ONE_TURN:
+      return (isBoardScreen || isQuestionOpen) && isOwnerTurn
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung trong luot cua doi so huu" };
+    case EffectType.SKIP:
+      return ((isBoardScreen && isOwnerTurn) || (isQuestionOpen && isCurrentResponder))
+        ? { usable: true }
+        : { usable: false, reason: "Chi dung truoc hoac sau khi mo o trong luot phu hop" };
+    default:
+      return { usable: false, reason: "Khong kha dung" };
+  }
 }
 
 function scoreRow(state) {
@@ -71,6 +147,59 @@ function captureMediaSnapshot() {
   return snapshot;
 }
 
+function stopBombVideoPlayback() {
+  app.querySelectorAll(".bomb-video").forEach((video) => {
+    try {
+      video.pause();
+      video.loop = false;
+      video.muted = true;
+      video.currentTime = 0;
+      video.removeAttribute("src");
+      video.load();
+    } catch {
+      // Ignore media shutdown issues during screen transitions.
+    }
+  });
+  mediaSnapshot.delete("bomb-video");
+}
+
+function isBombPresentation(state) {
+  return (
+    state.showingPresentationScreen &&
+    state.selectedCardIndex != null &&
+    state.cards[state.selectedCardIndex]?.type === "BOMB"
+  );
+}
+
+function teardownOutgoingMedia(nextState) {
+  const keepBombVideo = isBombPresentation(nextState);
+  if (!keepBombVideo) mediaSnapshot.delete("bomb-video");
+
+  app.querySelectorAll("video").forEach((video) => {
+    const isPersistentDiscussion = video === persistentDiscussionVideo;
+    const shouldKeep = keepBombVideo && video.dataset.mediaKey === "bomb-video";
+    if (shouldKeep) return;
+
+    try {
+      video.pause();
+      video.currentTime = 0;
+    } catch {
+      // Ignore teardown errors from browser media internals.
+    }
+
+    if (!isPersistentDiscussion) {
+      try {
+        video.loop = false;
+        video.muted = true;
+        video.removeAttribute("src");
+        video.load();
+      } catch {
+        // Ignore unload failures for detached media nodes.
+      }
+    }
+  });
+}
+
 function restoreMediaSnapshot() {
   app.querySelectorAll("video[data-media-key]").forEach((video) => {
     const saved = mediaSnapshot.get(video.dataset.mediaKey);
@@ -98,14 +227,24 @@ function restoreMediaSnapshot() {
   });
 }
 
+function shouldShowDiscussionVideo(state) {
+  return state.isDiscussionPhase || discussionVideoPendingEnd;
+}
+
 function syncPersistentDiscussionVideo(state) {
   const host = app.querySelector("[data-support-host='discussion']");
-  const video = persistentDiscussionShell.querySelector("video");
+  const video = persistentDiscussionVideo;
 
-  if (state.showingPresentationScreen && state.isDiscussionPhase && host) {
+  if (state.showingPresentationScreen && shouldShowDiscussionVideo(state) && host) {
     if (persistentDiscussionShell.parentElement !== host) {
       host.appendChild(persistentDiscussionShell);
     }
+
+    if (state.isDiscussionPhase && !previousState?.isDiscussionPhase) {
+      discussionVideoPendingEnd = true;
+      video.currentTime = 0;
+    }
+
     if (video.paused) {
       video.play().catch(() => {});
     }
@@ -163,16 +302,17 @@ function renderEffectSheet(state) {
                   <div class="effect-cards">
                     ${team.effectCards
                       .map((effect) => {
-                        const meta = EFFECT_META[effect.type];
+                        const meta = getEffectMeta(effect.type);
+                        const availability = getEffectAvailability(state, team.id, effect);
                         return `
                           <div
-                            class="effect-card ${effect.used ? "used" : ""}"
-                            data-action="effect"
-                            data-team="${team.id}"
-                            data-effect="${effect.id}"
+                            class="effect-card ${effect.used ? "used" : ""} ${availability.usable ? "" : "disabled"}"
+                            ${availability.usable ? `data-action="effect" data-team="${team.id}" data-effect="${effect.id}"` : ""}
+                            title="${availability.usable ? `${meta.desc} - ${meta.timing}` : (availability.reason ?? "Khong kha dung")}"
                           >
                             <img src="./assets/effects/${meta.image}" alt="${meta.name}">
                             <div class="effect-card-name">${meta.name}</div>
+                            <div class="effect-card-meta">${meta.timing}</div>
                           </div>
                         `;
                       })
@@ -206,20 +346,25 @@ function renderAvailableEffects(state) {
       const unused = team.effectCards.filter((effect) => !effect.used);
       if (unused.length === 0) return "";
       return `
-        <div class="team-effect-row ${team.id === activeIdx ? "active" : ""}">
-          <div class="team-effect-name">${esc(team.name)}:</div>
+        <div class="team-effect-card ${team.id === activeIdx ? "active" : ""}">
+          <div class="team-effect-name">${esc(team.name)}</div>
           <div class="effects-flow">
             ${unused
               .map((effect) => {
-                const meta = EFFECT_META[effect.type];
+                const meta = getEffectMeta(effect.type);
+                const availability = getEffectAvailability(state, team.id, effect);
                 return `
                   <button
-                    class="effect-pill"
-                    data-action="effect"
-                    data-team="${team.id}"
-                    data-effect="${effect.id}"
+                    class="effect-pill ${availability.usable ? "" : "disabled"}"
+                    ${availability.usable ? "" : "disabled"}
+                    ${
+                      availability.usable
+                        ? `data-action="effect" data-team="${team.id}" data-effect="${effect.id}"`
+                        : `title="${availability.reason ?? "Không khả dụng"}"`
+                    }
                   >
-                    ${esc(meta.name.toUpperCase())}
+                    <span>${esc(String(meta.name).toUpperCase())}</span>
+                    <small>${esc(meta.timing)}</small>
                   </button>
                 `;
               })
@@ -235,8 +380,11 @@ function renderAvailableEffects(state) {
 
   return `
     <section class="panel inline-effects">
-      <h3 class="section-title">Thẻ hiệu ứng có thể dùng</h3>
-      ${rows}
+      <div class="panel-heading">
+        <h3 class="section-title">THẺ HIỆU ỨNG</h3>
+        <div class="inline-hint">Bản rút gọn</div>
+      </div>
+      <div class="team-effects-grid">${rows}</div>
     </section>
   `;
 }
@@ -327,12 +475,13 @@ function renderQuestionBody(card, state) {
 }
 
 function renderSupportFeedPanel(state) {
-  if (!state.isDiscussionPhase) return "";
+  if (!shouldShowDiscussionVideo(state)) return "";
 
   return `
     <section class="panel support-feed-panel">
       <div class="panel-heading">
         <h3 class="section-title">TRỢ GIÚP</h3>
+        <div class="inline-hint">Video hỗ trợ</div>
       </div>
       <div class="support-feed-body">
         <div class="support-feed-copy">
@@ -347,7 +496,7 @@ function renderSupportFeedPanel(state) {
 function renderQuestionScreen(state, card) {
   const seconds = state.timerMs == null ? null : Math.floor(state.timerMs / 1000);
   return `
-    <div class="screen game-theme">
+    <div class="screen game-theme question-screen">
       <div class="top-bar">
         <button class="back-btn" data-action="close-presentation">←</button>
         ${
@@ -364,18 +513,20 @@ function renderQuestionScreen(state, card) {
         <div class="top-spacer"></div>
       </div>
       <div class="question-layout">
-        ${renderQuestionBody(card, state)}
-      </div>
-      <div class="presentation-bottom">
-        ${renderSupportFeedPanel(state)}
-        ${card.type === "QUESTION" ? renderAvailableEffects(state) : ""}
-        <section class="panel score-panel">
-          <div class="panel-heading">
-            <h3 class="section-title">BẢNG XẾP HẠNG</h3>
-            ${rankingsButton()}
-          </div>
-          ${scoreRow(state)}
-        </section>
+        <div class="question-primary question-primary-wide">
+          ${renderQuestionBody(card, state)}
+        </div>
+        <div class="question-sidebar">
+          ${renderSupportFeedPanel(state)}
+          ${card.type === "QUESTION" ? renderAvailableEffects(state) : ""}
+          <section class="panel score-panel compact-score-panel">
+            <div class="panel-heading">
+              <h3 class="section-title">BẢNG XẾP HẠNG</h3>
+              ${rankingsButton()}
+            </div>
+            ${scoreRow(state)}
+          </section>
+        </div>
       </div>
       ${renderFloatingControls()}
     </div>
@@ -384,14 +535,14 @@ function renderQuestionScreen(state, card) {
 
 function renderBombScreen(state) {
   return `
-    <div class="screen game-theme">
+    <div class="screen game-theme bomb-screen">
       <div class="top-bar">
         <button class="back-btn" data-action="close-presentation">←</button>
         <div class="timer-wrap"></div>
         <div class="top-spacer"></div>
       </div>
       <section class="panel bomb-wrap">
-        <video class="bomb-video" data-media-key="bomb-video" src="./assets/media/explosion.mp4" autoplay muted loop playsinline></video>
+        <video class="bomb-video" data-media-key="bomb-video" src="./assets/media/explosion.mp4" autoplay playsinline></video>
       </section>
       <section class="panel score-panel">
         <div class="panel-heading">
@@ -407,7 +558,7 @@ function renderBombScreen(state) {
 
 function renderGameScreen(state) {
   return `
-    <div class="screen game-theme">
+    <div class="screen game-theme board-screen">
       <section class="panel header-card">
         <div class="panel-heading">
           <h2 class="title">BẢNG XẾP HẠNG</h2>
@@ -415,8 +566,10 @@ function renderGameScreen(state) {
         </div>
         ${scoreRow(state)}
       </section>
-      <h1 class="board-title">CARD BOARD</h1>
-      <section class="panel board">${renderCardsGrid(state)}</section>
+      <section class="board-section">
+        <h1 class="board-title">CARD BOARD</h1>
+        <section class="panel board">${renderCardsGrid(state)}</section>
+      </section>
       <button class="cta" data-action="open-effect-sheet">CÁC THẺ CHỨC NĂNG CỦA TỪNG ĐỘI CÒN LẠI</button>
       ${renderEffectSheet(state)}
       ${renderFloatingControls()}
@@ -494,6 +647,9 @@ function rulePowerupPage() {
               <div class="tile">
                 <img src="./assets/effects/${meta.image}" alt="${meta.name}" class="rules-effect-image">
                 <div class="rules-effect-name">${meta.name}</div>
+                <div class="rules-effect-desc">Chức năng: ${meta.desc}</div>
+                <div class="rules-effect-timing">Thời điểm: ${meta.timing}</div>
+                <div class="rules-effect-usage">Khả dụng: ${meta.usability}</div>
               </div>
             `,
           )
@@ -527,7 +683,7 @@ function renderRulesScreen(state) {
 
   return `
     <div class="rules game-theme">
-      <div class="rules-page">${pageHtml}</div>
+      <div class="rules-page rules-page-${page}">${pageHtml}</div>
       <div class="rules-nav">
         <button class="ghost" data-action="rules-prev" ${page === 0 ? "disabled" : ""}>Back</button>
         <div class="rules-counter">${page + 1} / 4</div>
@@ -556,6 +712,7 @@ function render(state) {
     html = renderGameScreen(state);
   }
 
+  teardownOutgoingMedia(state);
   app.innerHTML = html;
   restoreMediaSnapshot();
   syncPersistentDiscussionVideo(state);
@@ -607,6 +764,7 @@ function handleAction(target) {
   }
 
   if (action === "close-presentation") {
+    stopBombVideoPlayback();
     vm.closePresentationScreen();
     return;
   }
@@ -670,4 +828,8 @@ vm.subscribe((state) => {
   else sfx.stopTimeoutTicking();
 
   render(state);
+  previousState = {
+    ...state,
+    teams: state.teams.map((team) => ({ ...team })),
+  };
 });
