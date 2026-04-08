@@ -3,11 +3,18 @@ import { EFFECT_META, QuestionKind } from "./models.js";
 import { SfxPlayer } from "./sfxPlayer.js";
 
 const app = document.getElementById("app");
-const vm = new GameViewModel();
-const sfx = new SfxPlayer();
+const urlParams = new URLSearchParams(window.location.search);
+const APP_MODE = urlParams.get("mode") === "display" ? "display" : "control";
+const IS_DISPLAY_MODE = APP_MODE === "display";
+const STATE_STORAGE_KEY = "btt:web:shared-state";
+const STATE_CHANNEL_NAME = "btt:web:sync";
+const vm = IS_DISPLAY_MODE ? null : new GameViewModel();
+const sfx = IS_DISPLAY_MODE ? new SfxPlayer() : null;
+const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(STATE_CHANNEL_NAME) : null;
 let mediaSnapshot = new Map();
 let previousState = null;
 let discussionVideoPendingEnd = false;
+let currentState = loadSharedState();
 const persistentDiscussionShell = document.createElement("div");
 persistentDiscussionShell.className = "discussion-shell";
 persistentDiscussionShell.innerHTML = `
@@ -24,9 +31,46 @@ persistentDiscussionShell.innerHTML = `
 const persistentDiscussionVideo = persistentDiscussionShell.querySelector("video");
 persistentDiscussionVideo.addEventListener("ended", () => {
   discussionVideoPendingEnd = false;
-  render(vm.state);
-  syncPersistentDiscussionVideo(vm.state);
+  if (currentState) {
+    render(currentState);
+    syncPersistentDiscussionVideo(currentState);
+  }
 });
+
+document.title = IS_DISPLAY_MODE ? "BTT Presentation" : "BTT Control";
+
+function loadSharedState() {
+  try {
+    const raw = window.localStorage.getItem(STATE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function publishState(state) {
+  currentState = state;
+  try {
+    window.localStorage.setItem(STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore storage quota or privacy-mode failures.
+  }
+
+  syncChannel?.postMessage({
+    type: "state_snapshot",
+    payload: state,
+  });
+}
+
+function applyIncomingState(state) {
+  if (!state) return;
+  currentState = state;
+  render(state);
+  previousState = {
+    ...state,
+    teams: state.teams.map((team) => ({ ...team })),
+  };
+}
 
 function esc(text) {
   return String(text)
@@ -78,10 +122,33 @@ function scoreRow(state) {
 }
 
 function rankingsButton() {
+  if (IS_DISPLAY_MODE) return "";
   return `
     <button class="ghost-icon" data-action="show-standings" title="Standings">
       <span>★</span>
     </button>
+  `;
+}
+
+function renderModeToolbar() {
+  if (IS_DISPLAY_MODE) return "";
+  return `
+    <div class="mode-toolbar">
+      <div class="mode-badge">CONTROL</div>
+      <button class="ghost open-display-btn" data-action="open-display-tab">Open Display Tab</button>
+    </div>
+  `;
+}
+
+function renderDisplayWaitingScreen() {
+  return `
+    <div class="screen game-theme waiting-screen">
+      <section class="panel waiting-panel">
+        <h1 class="title">DISPLAY MODE</h1>
+        <p>Open the control tab first to start syncing the presentation screen.</p>
+        <p class="waiting-hint">Use <code>?mode=control</code> in another tab.</p>
+      </section>
+    </div>
   `;
 }
 
@@ -428,6 +495,7 @@ function renderQuestionBody(card, state) {
 }
 
 function renderSupportFeedPanel(state) {
+  if (!IS_DISPLAY_MODE) return "";
   if (!shouldShowDiscussionVideo(state)) return "";
 
   return `
@@ -450,8 +518,13 @@ function renderQuestionScreen(state, card) {
   const seconds = state.timerMs == null ? null : Math.floor(state.timerMs / 1000);
   return `
     <div class="screen game-theme question-screen">
+      ${renderModeToolbar()}
       <div class="top-bar">
-        <button class="back-btn" data-action="close-presentation">←</button>
+        ${
+          IS_DISPLAY_MODE
+            ? `<div class="top-spacer"></div>`
+            : `<button class="back-btn" data-action="close-presentation">←</button>`
+        }
         ${
           seconds != null
             ? `
@@ -471,7 +544,7 @@ function renderQuestionScreen(state, card) {
         </div>
         <div class="question-sidebar">
           ${renderSupportFeedPanel(state)}
-          ${card.type === "QUESTION" ? renderAvailableEffects(state) : ""}
+          ${!IS_DISPLAY_MODE && card.type === "QUESTION" ? renderAvailableEffects(state) : ""}
           <section class="panel score-panel compact-score-panel">
             <div class="panel-heading">
               <h3 class="section-title">BẢNG XẾP HẠNG</h3>
@@ -481,7 +554,7 @@ function renderQuestionScreen(state, card) {
           </section>
         </div>
       </div>
-      ${renderFloatingControls()}
+      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
     </div>
   `;
 }
@@ -489,13 +562,22 @@ function renderQuestionScreen(state, card) {
 function renderBombScreen(state) {
   return `
     <div class="screen game-theme bomb-screen">
+      ${renderModeToolbar()}
       <div class="top-bar">
-        <button class="back-btn" data-action="close-presentation">←</button>
+        ${
+          IS_DISPLAY_MODE
+            ? `<div class="top-spacer"></div>`
+            : `<button class="back-btn" data-action="close-presentation">←</button>`
+        }
         <div class="timer-wrap"></div>
         <div class="top-spacer"></div>
       </div>
       <section class="panel bomb-wrap">
-        <video class="bomb-video" data-media-key="bomb-video" src="./assets/media/explosion.mp4" autoplay playsinline></video>
+        ${
+          IS_DISPLAY_MODE
+            ? `<video class="bomb-video" data-media-key="bomb-video" src="./assets/media/explosion.mp4" autoplay playsinline></video>`
+            : `<div class="bomb-control-card"><div class="bomb-control-icon">💣</div><div class="bomb-control-copy">Bomb da mo</div></div>`
+        }
       </section>
       <section class="panel score-panel">
         <div class="panel-heading">
@@ -504,7 +586,7 @@ function renderBombScreen(state) {
         </div>
         ${scoreRow(state)}
       </section>
-      ${renderFloatingControls()}
+      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
     </div>
   `;
 }
@@ -512,6 +594,7 @@ function renderBombScreen(state) {
 function renderGameScreen(state) {
   return `
     <div class="screen game-theme board-screen">
+      ${renderModeToolbar()}
       <section class="panel header-card">
         <div class="panel-heading">
           <h2 class="title">BẢNG XẾP HẠNG</h2>
@@ -523,9 +606,9 @@ function renderGameScreen(state) {
         <h1 class="board-title">CARD BOARD</h1>
         <section class="panel board">${renderCardsGrid(state)}</section>
       </section>
-      <button class="cta" data-action="open-effect-sheet">CÁC THẺ CHỨC NĂNG CỦA TỪNG ĐỘI CÒN LẠI</button>
-      ${renderEffectSheet(state)}
-      ${renderFloatingControls()}
+      ${!IS_DISPLAY_MODE ? `<button class="cta" data-action="open-effect-sheet">CÁC THẺ CHỨC NĂNG CỦA TỪNG ĐỘI CÒN LẠI</button>` : ""}
+      ${!IS_DISPLAY_MODE ? renderEffectSheet(state) : ""}
+      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
     </div>
   `;
 }
@@ -553,12 +636,13 @@ function renderStandingRows(teams) {
 function renderStandingsScreen(state) {
   return `
     <div class="screen game-theme standings-screen">
+      ${renderModeToolbar()}
       <div class="standings-title">${state.gameOver ? "FINAL STANDINGS" : "CURRENT STANDINGS"}</div>
       <section class="panel standings-panel">
         ${renderStandingRows(state.teams)}
       </section>
       ${
-        !state.gameOver
+        !IS_DISPLAY_MODE && !state.gameOver
           ? `<button class="start-btn close-standings" data-action="close-standings">CLOSE</button>`
           : ""
       }
@@ -636,12 +720,19 @@ function renderRulesScreen(state) {
 
   return `
     <div class="rules game-theme">
+      ${renderModeToolbar()}
       <div class="rules-page rules-page-${page}">${pageHtml}</div>
       <div class="rules-nav">
-        <button class="ghost" data-action="rules-prev" ${page === 0 ? "disabled" : ""}>Back</button>
+        ${
+          IS_DISPLAY_MODE
+            ? `<div class="rules-nav-spacer"></div>`
+            : `<button class="ghost" data-action="rules-prev" ${page === 0 ? "disabled" : ""}>Back</button>`
+        }
         <div class="rules-counter">${page + 1} / 4</div>
         ${
-          page < 3
+          IS_DISPLAY_MODE
+            ? `<div class="rules-nav-spacer"></div>`
+            : page < 3
             ? `<button class="ghost" data-action="rules-next">Next</button>`
             : `<button class="start-btn" data-action="start-game">START</button>`
         }
@@ -651,6 +742,11 @@ function renderRulesScreen(state) {
 }
 
 function render(state) {
+  if (!state) {
+    app.innerHTML = renderDisplayWaitingScreen();
+    return;
+  }
+
   mediaSnapshot = captureMediaSnapshot();
 
   let html;
@@ -672,6 +768,8 @@ function render(state) {
 }
 
 function handleAction(target) {
+  if (IS_DISPLAY_MODE || !vm) return;
+
   const actionNode = target.closest("[data-action]");
   if (!actionNode) return;
 
@@ -679,13 +777,13 @@ function handleAction(target) {
   const state = vm.state;
 
   if (action === "open-card") {
-    sfx.playByName("sfx_card_flip");
+    sfx?.playByName("sfx_card_flip");
     vm.onCardClicked(Number(actionNode.dataset.index));
     return;
   }
 
   if (action === "open-effect-sheet") {
-    sfx.playByName("sfx_open_sheet");
+    sfx?.playByName("sfx_open_sheet");
     vm.setShowEffectSheet(true);
     return;
   }
@@ -697,7 +795,7 @@ function handleAction(target) {
   }
 
   if (action === "effect") {
-    sfx.playByName("sfx_open_sheet");
+    sfx?.playByName("sfx_open_sheet");
     vm.useEffectCard(Number(actionNode.dataset.team), actionNode.dataset.effect);
     return;
   }
@@ -710,8 +808,8 @@ function handleAction(target) {
   if (action === "add-score-active") {
     const delta = Number(actionNode.dataset.delta);
     const teamId = activeTeamIndexOf(state);
-    if (delta > 0) sfx.playByName("sfx_score_up");
-    if (delta < 0) sfx.playByName("sfx_score_down");
+    if (delta > 0) sfx?.playByName("sfx_score_up");
+    if (delta < 0) sfx?.playByName("sfx_score_down");
     vm.addPointsManually(delta, teamId);
     return;
   }
@@ -723,7 +821,7 @@ function handleAction(target) {
   }
 
   if (action === "pick-choice") {
-    sfx.playByName("sfx_answer_select");
+    sfx?.playByName("sfx_answer_select");
     vm.submitAnswer(Number(actionNode.dataset.choice));
     return;
   }
@@ -761,15 +859,24 @@ function handleAction(target) {
 
   if (action === "start-game") {
     vm.closeRulesScreen();
+    return;
+  }
+
+  if (action === "open-display-tab") {
+    window.open(`${window.location.pathname}?mode=display`, "_blank", "noopener");
   }
 }
 
-app.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  handleAction(event.target);
-});
+if (!IS_DISPLAY_MODE) {
+  app.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    handleAction(event.target);
+  });
+}
 
-vm.subscribe((state) => {
+function syncAudioForState(state) {
+  if (!IS_DISPLAY_MODE || !sfx || !state) return;
+
   const shouldPlayTicking =
     state.showingPresentationScreen &&
     state.selectedCardIndex != null &&
@@ -780,10 +887,54 @@ vm.subscribe((state) => {
 
   if (shouldPlayTicking) sfx.startTimeoutTicking();
   else sfx.stopTimeoutTicking();
+}
 
-  render(state);
-  previousState = {
-    ...state,
-    teams: state.teams.map((team) => ({ ...team })),
-  };
+syncChannel?.addEventListener("message", (event) => {
+  const message = event.data;
+  if (!message || typeof message !== "object") return;
+
+  if (message.type === "request_state" && !IS_DISPLAY_MODE && vm) {
+    publishState(vm.state);
+    return;
+  }
+
+  if (message.type === "state_snapshot" && IS_DISPLAY_MODE) {
+    syncAudioForState(message.payload);
+    applyIncomingState(message.payload);
+  }
 });
+
+window.addEventListener("storage", (event) => {
+  if (!IS_DISPLAY_MODE || event.key !== STATE_STORAGE_KEY || !event.newValue) return;
+  try {
+    const nextState = JSON.parse(event.newValue);
+    syncAudioForState(nextState);
+    applyIncomingState(nextState);
+  } catch {
+    // Ignore malformed external storage payloads.
+  }
+});
+
+if (IS_DISPLAY_MODE) {
+  if (currentState) {
+    syncAudioForState(currentState);
+    render(currentState);
+    previousState = {
+      ...currentState,
+      teams: currentState.teams.map((team) => ({ ...team })),
+    };
+  } else {
+    render(null);
+  }
+  syncChannel?.postMessage({ type: "request_state" });
+} else if (vm) {
+  vm.subscribe((state) => {
+    currentState = state;
+    render(state);
+    publishState(state);
+    previousState = {
+      ...state,
+      teams: state.teams.map((team) => ({ ...team })),
+    };
+  });
+}

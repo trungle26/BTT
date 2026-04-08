@@ -41,6 +41,34 @@ textarea {
   min-height: 100vh;
 }
 
+.mode-toolbar {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 234, 0, 0.16);
+  border: 1px solid rgba(255, 234, 0, 0.3);
+  color: var(--yellow);
+  font-family: "Orbitron", sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.open-display-btn {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .game-theme {
   background:
     linear-gradient(rgba(4, 2, 9, 0.3), rgba(4, 2, 9, 0.56)),
@@ -170,6 +198,27 @@ textarea {
   padding-left: 4px;
   color: var(--yellow);
   font-size: clamp(22px, 2.2vw, 30px);
+}
+
+.waiting-screen {
+  align-items: center;
+  justify-content: center;
+}
+
+.waiting-panel {
+  width: min(560px, calc(100vw - 32px));
+  padding: 28px;
+  text-align: center;
+}
+
+.waiting-panel p {
+  margin: 12px 0 0;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.waiting-hint {
+  color: var(--yellow);
 }
 
 .board {
@@ -743,6 +792,26 @@ textarea {
   background: black;
 }
 
+.bomb-control-card {
+  display: grid;
+  place-items: center;
+  min-height: min(68vh, 620px);
+  gap: 10px;
+  text-align: center;
+}
+
+.bomb-control-icon {
+  font-size: clamp(80px, 12vw, 160px);
+  line-height: 1;
+}
+
+.bomb-control-copy {
+  font-family: "Orbitron", sans-serif;
+  font-size: clamp(24px, 3vw, 40px);
+  color: var(--yellow);
+  letter-spacing: 0.08em;
+}
+
 .standings-screen {
   align-items: center;
   justify-content: center;
@@ -837,6 +906,11 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.rules-nav-spacer {
+  width: 88px;
+  height: 1px;
 }
 
 .rules-subtitle {
