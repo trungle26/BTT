@@ -74,7 +74,7 @@ export const EFFECT_META = {
   },
 };
 
-export function createTeam(id, name, effectCards, score = 0) {
+export function createTeam(id, name, effectCards, score = 100) {
   return { id, name, effectCards, score };
 }
 

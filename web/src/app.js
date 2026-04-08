@@ -637,7 +637,7 @@ function renderStandingsScreen(state) {
   return `
     <div class="screen game-theme standings-screen">
       ${renderModeToolbar()}
-      <div class="standings-title">${state.gameOver ? "FINAL STANDINGS" : "CURRENT STANDINGS"}</div>
+      <div class="standings-title">${state.gameOver ? "KẾT QUẢ CHUNG CUỘC" : "BẢNG XẾP HẠNG"}</div>
       <section class="panel standings-panel">
         ${renderStandingRows(state.teams)}
       </section>
@@ -663,7 +663,7 @@ function ruleGameplayPage() {
       </div>
       <p class="rules-subtitle">Hệ thống điểm số:</p>
       <div class="rule-grid cols-4">
-        <div class="tile">🎯 Điểm khởi đầu: 0</div>
+        <div class="tile">🎯 Điểm khởi đầu: 100</div>
         <div class="tile">✅ Trả lời đúng: +10</div>
         <div class="tile">❌ Trả lời sai: -5</div>
         <div class="tile">💥 Gặp Bomb: -20</div>
@@ -808,8 +808,6 @@ function handleAction(target) {
   if (action === "add-score-active") {
     const delta = Number(actionNode.dataset.delta);
     const teamId = activeTeamIndexOf(state);
-    if (delta > 0) sfx?.playByName("sfx_score_up");
-    if (delta < 0) sfx?.playByName("sfx_score_down");
     vm.addPointsManually(delta, teamId);
     return;
   }

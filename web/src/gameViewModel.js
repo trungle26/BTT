@@ -20,7 +20,7 @@ export class GameViewModel {
   constructor() {
     this.listeners = new Set();
     this.timerInterval = null;
-    this.remainingTimeMs = 20_000;
+    this.remainingTimeMs = 20_999;
     this.isDoublePoint = false;
     this.isOneMoreTurn = false;
     this.roundsPerTeam = 5;
@@ -71,17 +71,18 @@ export class GameViewModel {
     const effectTypes = Object.values(EffectType);
     const pool = [];
     effectTypes.forEach((type) => {
-      for (let i = 0; i < 8; i += 1) pool.push(type);
+      for (let i = 0; i < 3; i += 1) pool.push(type);
     });
 
     const teams = [];
+    const teamNames = ["Cựu", "Don Bosco", "Đaminh Savio", "Gioan Tông đồ", "Mẹ Vô Nhiễm", "Phaolo Trở Lại", "Phanxico Assisi","Anton Padua"]
     for (let i = 1; i <= 8; i += 1) {
       const hand = [];
       for (let h = 0; h < 3; h += 1) {
         const pick = Math.floor(Math.random() * pool.length);
         hand.push(createEffectInstance(`${i}_${h}`, pool.splice(pick, 1)[0]));
       }
-      teams.push(createTeam(i - 1, `Team ${i}`, hand, 0));
+      teams.push(createTeam(i - 1, teamNames[i - 1], hand, 100));
     }
 
     this.cancelTimer();
@@ -288,10 +289,10 @@ export class GameViewModel {
     }
 
     if (card.kind === QuestionKind.MULTIPLE_CHOICE || card.kind === QuestionKind.ESSAY) {
-      this.remainingTimeMs = 20_000;
+      this.remainingTimeMs = 20_999;
       this.setState((state) => ({
         ...state,
-        timerMs: 20_000,
+        timerMs: 20_999,
         isTimerRunning: false,
         isDiscussionPhase: false,
       }));
@@ -349,10 +350,10 @@ export class GameViewModel {
 
   startQuestionTimer() {
     this.cancelCurrentTimer();
-    this.remainingTimeMs = 20_000;
+    this.remainingTimeMs = 20_999;
     this.setState((state) => ({
       ...state,
-      timerMs: 20_000,
+      timerMs: 20_999,
       isTimerRunning: true,
       isDiscussionPhase: false,
     }));
@@ -415,7 +416,7 @@ export class GameViewModel {
 
       if (inDiscussionPhase) {
         inDiscussionPhase = false;
-        this.remainingTimeMs = 20_000;
+        this.remainingTimeMs = 20_999;
         this.setState((state) => ({
           ...state,
           timerMs: this.remainingTimeMs,
@@ -445,10 +446,10 @@ export class GameViewModel {
 
   resetTimer() {
     this.cancelCurrentTimer();
-    this.remainingTimeMs = 20_000;
+    this.remainingTimeMs = 20_999;
     this.setState((state) => ({
       ...state,
-      timerMs: 20_000,
+      timerMs: 20_999,
       isDiscussionPhase: false,
       isTimerRunning: false,
     }));
@@ -456,7 +457,7 @@ export class GameViewModel {
 
   cancelTimer() {
     this.cancelCurrentTimer();
-    this.remainingTimeMs = 20_000;
+    this.remainingTimeMs = 20_999;
     this.setState((state) => ({
       ...state,
       isDiscussionPhase: false,
@@ -492,7 +493,7 @@ export class GameViewModel {
 
     if (card.kind === QuestionKind.MULTIPLE_CHOICE) {
       let points = choiceIndex === card.correctChoiceIndex ? 10 : -5;
-      if (this.isDoublePoint) points *= 2;
+      if (this.isDoublePoint && points > 0) points *= 2;
       this.applyScoreToActive(points);
     }
 
