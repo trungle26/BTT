@@ -80,7 +80,6 @@ object CardsGenerator {
                 correctChoiceIndex = -1,
                 correctAnswerText = "Hoàn thành thử thách để nhận điểm từ quản trò.",
                 kind = QuestionKind.REAL_WORLD_CHALLENGE,
-                isChallenge = true,
                 isRevealed = false
             ),
             QuestionCard(
@@ -90,7 +89,6 @@ object CardsGenerator {
                 correctChoiceIndex = -1,
                 correctAnswerText = "Quản trò xác nhận kết quả.",
                 kind = QuestionKind.REAL_WORLD_CHALLENGE,
-                isChallenge = true,
                 isRevealed = false
             )
         )

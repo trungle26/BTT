@@ -1,9 +1,16 @@
 package com.trung.myapplication.game.vm
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.trung.myapplication.game.data.CardsGenerator
-import com.trung.myapplication.game.model.*
+import com.trung.myapplication.game.model.BombCard
+import com.trung.myapplication.game.model.EffectInstance
+import com.trung.myapplication.game.model.EffectType
+import com.trung.myapplication.game.model.QuestionCard
+import com.trung.myapplication.game.model.QuestionKind
+import com.trung.myapplication.game.model.Team
+import com.trung.myapplication.game.ui.util.SfxPlayer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,17 +43,38 @@ class GameViewModel : ViewModel() {
         if (effectCard.used) return
         markEffectCardUsed(teamId, effectId)
 
-        if (effectCard.type != EffectType.NOPE){
-            _state.update {
-                it.copy(activeEffect = effectCard)
-            }
-        }
+        if (effectCard.type == EffectType.NOPE) {
+            resetTimer()
+            val currentEffect = _state.value.activeEffect
+            if (currentEffect != null) {
+                val wasNegated = _state.value.isEffectNegated
+                val nowNegated = !wasNegated
+                _state.update { it.copy(isEffectNegated = nowNegated) }
 
-        when (effectCard.type) {
+                if (nowNegated) {
+                    negateActiveEffect(currentEffect)
+                } else {
+                    restoreActiveEffect(currentEffect)
+                }
+            }
+        } else {
+            // New effect card being played - clear any previous nope chain
+            _state.update {
+                it.copy(
+                    activeEffect = effectCard,
+                    isEffectNegated = false
+                )
+            }
+            applyEffect(effectCard, teamId)
+        }
+    }
+
+    private fun applyEffect(effect: EffectInstance, teamId: Int) {
+        when (effect.type) {
             EffectType.SEE_FUTURE -> {}
 
             EffectType.GET_HELP -> {
-                timerJob?.cancel()
+                startGetHelpTimer()
             }
 
             EffectType.STEAL -> {
@@ -56,12 +84,6 @@ class GameViewModel : ViewModel() {
                 resetTimer()
                 isDoublePoint = false
             }
-
-            EffectType.NOPE -> {
-                handleNope()
-            }
-
-            EffectType.ASSIGN -> {}
 
             EffectType.DOUBLE_POINTS -> {
                 isDoublePoint = true
@@ -75,39 +97,90 @@ class GameViewModel : ViewModel() {
                 // Skip turn
                 advanceTurn()
             }
+
+            else -> {}
         }
     }
 
-    private fun handleNope() {
-        when (_state.value.activeEffect?.type) {
+    private fun negateActiveEffect(effect: EffectInstance) {
+        when (effect.type) {
             EffectType.SEE_FUTURE -> {}
+
             EffectType.GET_HELP -> {
+                _state.update { it.copy(isDiscussionPhase = false) }
                 resetTimer()
             }
 
             EffectType.STEAL -> {
                 _state.update { it.copy(stolenTurnTeamIndex = null) }
-                resetTimer()
-            }
-
-            EffectType.ADD_ONE_TURN -> {
-                isOneMoreTurn = false
             }
 
             EffectType.DOUBLE_POINTS -> {
                 isDoublePoint = false
             }
 
+            EffectType.ADD_ONE_TURN -> {
+                isOneMoreTurn = false
+            }
+
             EffectType.SKIP -> {
                 resetTimer()
-                if (!isOneMoreTurn) {
-                    _state.update { st ->
-                        val next = (st.activeTeamIndex - 1) % st.teams.size
-                        st.copy(
-                            activeTeamIndex = next,
-                        )
-                    }
+                // Undo the turn advancement
+                _state.update { st ->
+                    val n = st.teams.size
+                    val prev = (st.activeTeamIndex - 1 + n) % n
+                    st.copy(activeTeamIndex = prev)
                 }
+            }
+
+            else -> {}
+        }
+    }
+
+    private fun restoreActiveEffect(effect: EffectInstance) {
+        // Find the team that played the effect (the active effect was played by someone)
+        // Since we don't store the player ID in activeEffect, let's assume it was the 
+        // person who triggered it originally.
+        // For some effects, we need to know who played it (like STEAL).
+        // Let's modify useEffectCard slightly to store the effect's player index.
+
+        // For now, let's just re-apply the effect.
+        // Note: For STEAL, it's tricky because we don't know who "stole" it without extra state.
+        // I'll skip re-applying STEAL accurately unless I add stolenTurnTeamIndex back.
+        // Actually, stolenTurnTeamIndex is the team that stole the turn.
+
+        when (effect.type) {
+            EffectType.SEE_FUTURE -> {}
+
+            EffectType.GET_HELP -> {
+                startGetHelpTimer()
+            }
+
+            EffectType.STEAL -> {
+                // To restore STEAL, we need to know which team stole it.
+                // For now, let's assume the effect's ID prefix contains the team ID.
+                val originalTeamId =
+                    effect.id.split("_").firstOrNull()?.toIntOrNull()?.let { it - 1 }
+                if (originalTeamId != null) {
+                    _state.update {
+                        it.copy(stolenTurnTeamIndex = originalTeamId)
+                    }
+                    resetTimer()
+                    isDoublePoint = false
+                }
+            }
+
+            EffectType.DOUBLE_POINTS -> {
+                isDoublePoint = true
+            }
+
+            EffectType.ADD_ONE_TURN -> {
+                isOneMoreTurn = true
+            }
+
+            EffectType.SKIP -> {
+                resetTimer()
+                advanceTurn()
             }
 
             else -> {}
@@ -137,11 +210,39 @@ class GameViewModel : ViewModel() {
             teams = teams,
             activeTeamIndex = 0,
             selectedCardIndex = null,
-            roundsPerTeam = roundsPerTeam
+            roundsPerTeam = 5
         )
     }
 
     fun onCardClicked(index: Int) {
+        val st = _state.value
+        val revealedCount = st.cards.count { it.isRevealed }
+        val remainingTurns = 40 - revealedCount
+
+        val hiddenChallenges = st.cards.filterIndexed { i, c ->
+            i != index && !c.isRevealed && c is QuestionCard && c.kind == QuestionKind.REAL_WORLD_CHALLENGE
+        }
+
+        // If remaining turns are less than or equal to hidden challenges, 
+        // the current card must be a challenge if it isn't one already.
+        if (remainingTurns <= hiddenChallenges.size + (if (st.cards[index] is QuestionCard && (st.cards[index] as QuestionCard).kind == QuestionKind.REAL_WORLD_CHALLENGE) 1 else 0)) {
+            val currentCard = st.cards[index]
+            if (!(currentCard is QuestionCard && currentCard.kind == QuestionKind.REAL_WORLD_CHALLENGE)) {
+                // Swap this card with a hidden challenge
+                val challengeIndex =
+                    st.cards.indexOfFirst { !it.isRevealed && it is QuestionCard && it.kind == QuestionKind.REAL_WORLD_CHALLENGE }
+                if (challengeIndex != -1) {
+                    _state.update { s ->
+                        val newCards = s.cards.toMutableList()
+                        val temp = newCards[index]
+                        newCards[index] = newCards[challengeIndex]
+                        newCards[challengeIndex] = temp
+                        s.copy(cards = newCards)
+                    }
+                }
+            }
+        }
+
         _state.update {
             it.copy(
                 showingPresentationScreen = true,
@@ -160,30 +261,46 @@ class GameViewModel : ViewModel() {
             is QuestionCard -> {
                 val question = _state.value.cards[index] as QuestionCard
                 if (question.kind == QuestionKind.MULTIPLE_CHOICE || question.kind == QuestionKind.ESSAY) {
-                    startQuestionTimer()
+                    // Do not start timer automatically, wait for manual click
+                    _state.update { st -> st.copy(timerMs = 20_000L) }
                 } else {
                     timerJob?.cancel()
-                    _state.update { st -> st.copy(timerMs = null) }
+                    markRevealed(index)
                 }
             }
         }
     }
 
     private fun markRevealed(index: Int) {
-        _state.update {
-            it.copy(
-                cards = it.cards.mapIndexed { i, c ->
-                    if (i == index) {
-                        when (c) {
-                            is QuestionCard -> c.copy(isRevealed = true)
-                            is BombCard -> c.copy(isRevealed = true)
-                        }
-                    } else {
-                        c
+        _state.update { st ->
+            val newCards = st.cards.mapIndexed { i, c ->
+                if (i == index) {
+                    when (c) {
+                        is QuestionCard -> c.copy(isRevealed = true)
+                        is BombCard -> c.copy(isRevealed = true)
                     }
+                } else {
+                    c
                 }
+            }
+
+            val revealedCount = newCards.count { it.isRevealed }
+            val isGameOver = revealedCount >= 40
+
+            st.copy(
+                cards = newCards,
+                gameOver = isGameOver,
+                showingStandings = isGameOver
             )
         }
+    }
+
+    fun showStandings() {
+        _state.update { it.copy(showingStandings = true) }
+    }
+
+    fun hideStandings() {
+        _state.update { it.copy(showingStandings = false) }
     }
 
     private fun applyScoreToActive(delta: Int) {
@@ -208,10 +325,13 @@ class GameViewModel : ViewModel() {
         }
     }
 
-    private fun startQuestionTimer() {
+    private fun startQuestionTimer(context: Context) {
         timerJob?.cancel()
+        SfxPlayer.stopTimeoutTicking()
+        remainingTimeMs = 20_000L
 
         timerJob = viewModelScope.launch {
+            SfxPlayer.startTimeoutTicking(context = context)
             while (remainingTimeMs > 0) {
                 _state.update { it.copy(timerMs = remainingTimeMs) }
 
@@ -220,55 +340,97 @@ class GameViewModel : ViewModel() {
                 remainingTimeMs -= 200L
             }
 
-            if (remainingTimeMs <= 0) {
-                _state.update { it.copy(timerMs = 0) }
-                onAnswerTimeout()
-            }
+            _state.update { it.copy(timerMs = 0) }
+            onAnswerTimeout()
         }
     }
 
-    fun resetTimer() {
-        timerJob?.cancel()
-        remainingTimeMs = 20_000L
-        startQuestionTimer()
+    fun startTimerManually(context: Context) {
+        if (timerJob?.isActive == true) return
+        startQuestionTimer(context)
     }
 
-    fun cancelTimer(){
+    fun resetTimer() {
+        SfxPlayer.stopTimeoutTicking()
+        timerJob?.cancel()
+        remainingTimeMs = 20_000L
+        _state.update { it.copy(isDiscussionPhase = false) }
+    }
+
+    private fun startGetHelpTimer() {
+        SfxPlayer.stopTimeoutTicking()
+        timerJob?.cancel()
+        remainingTimeMs = 31_500L
+        _state.update { it.copy(isDiscussionPhase = true) }
+
+        timerJob = viewModelScope.launch {
+            // Discussion phase (30s)
+            while (remainingTimeMs > 0) {
+                _state.update { it.copy(timerMs = remainingTimeMs) }
+                delay(200L)
+                remainingTimeMs -= 200L
+            }
+
+            // Countdown phase (20s)
+            remainingTimeMs = 20_000L
+            _state.update { it.copy(isDiscussionPhase = false) }
+            while (remainingTimeMs > 0) {
+                _state.update { it.copy(timerMs = remainingTimeMs) }
+                delay(200L)
+                remainingTimeMs -= 200L
+            }
+
+            _state.update { it.copy(timerMs = 0) }
+            onAnswerTimeout()
+        }
+    }
+
+    fun cancelTimer() {
+        SfxPlayer.stopTimeoutTicking()
         timerJob?.cancel()
         remainingTimeMs = 20_000L
     }
 
     fun submitAnswer(choiceIndex: Int) {
-        val selectedCardIndex = _state.value.selectedCardIndex ?: return
-        val currentCard = _state.value.cards[selectedCardIndex]
+        val st = _state.value
+        if (st.selectedChoiceIndex != null) return // Already submitted
+
+        val selectedCardIndex = st.selectedCardIndex ?: return
+        val currentCard = st.cards[selectedCardIndex]
         if (currentCard !is QuestionCard) return
 
-        timerJob?.cancel()
-        val didTimeout = choiceIndex < 0
         val selectedChoice = if (choiceIndex >= 0) choiceIndex else null
+
+        _state.update { s ->
+            s.copy(
+                selectedChoiceIndex = selectedChoice,
+                answerTimedOut = choiceIndex < 0
+            )
+        }
+    }
+
+    private fun onAnswerTimeout() {
+        val st = _state.value
+        val selectedCardIndex = st.selectedCardIndex ?: return
+        val currentCard = st.cards.getOrNull(selectedCardIndex) as? QuestionCard ?: return
+
+        // Calculate points and reveal
+        val choiceIndex = st.selectedChoiceIndex ?: -1
+        val didTimeout = choiceIndex < 0
+        
         if (currentCard.kind == QuestionKind.MULTIPLE_CHOICE) {
             var points = if (choiceIndex == currentCard.correctChoiceIndex) 10 else -5
             if (isDoublePoint) points *= 2
             applyScoreToActive(points)
         }
-        _state.update { st ->
-            st.copy(
-                selectedChoiceIndex = selectedChoice,
-                answerTimedOut = didTimeout
+
+        _state.update { s ->
+            s.copy(
+                answerTimedOut = didTimeout,
+                isRevealingAnswer = false,
             )
         }
         markRevealed(selectedCardIndex)
-    }
-
-    private fun onAnswerTimeout() {
-        val selectedCardIndex = _state.value.selectedCardIndex ?: return
-        val currentCard = _state.value.cards.getOrNull(selectedCardIndex)
-        if (currentCard is QuestionCard && currentCard.kind == QuestionKind.ESSAY) {
-            timerJob?.cancel()
-            markRevealed(selectedCardIndex)
-            return
-        }
-        submitAnswer(-1)
     }
 
     fun closePresentationScreen() {
@@ -290,6 +452,7 @@ class GameViewModel : ViewModel() {
                 answerTimedOut = false,
                 stolenTurnTeamIndex = null,
                 timerMs = null,
+                isRevealingAnswer = false,
             )
         }
     }

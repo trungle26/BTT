@@ -19,7 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import com.trung.myapplication.game.ui.theme.GameUiColors
@@ -31,38 +33,45 @@ import androidx.compose.ui.unit.sp
 import com.trung.myapplication.game.model.BombCard
 import com.trung.myapplication.game.model.Card
 import com.trung.myapplication.game.model.QuestionCard
+import com.trung.myapplication.game.ui.theme.CardGradients
 
 @Composable
 fun CardView(card: Card, index: Int, onClick: () -> Unit) {
     val revealed = card.isRevealed
 
-    // High-intensity neon colors
-    val targetColor = when {
+    val bgBrush = when {
+        !revealed -> CardGradients.BlueBg
+        card is BombCard -> CardGradients.RedBg
+        else -> CardGradients.OrangeBg
+    }
+
+    val borderBrush = when {
+        !revealed -> CardGradients.BlueBorder
+        card is BombCard -> CardGradients.RedBorder
+        else -> CardGradients.OrangeBorder
+    }
+
+    val neonColor = when {
         !revealed -> GameUiColors.CardNeonUnrevealed
         card is BombCard -> GameUiColors.CardNeonBomb
         else -> GameUiColors.CardNeonRevealed
     }
-    val neonColor = animateColorAsState(
-        targetValue = targetColor,
-        animationSpec = tween(250),
-        label = "cardNeonColor"
-    )
-    val cardScale = animateFloatAsState(
-        targetValue = if (revealed) 0.98f else 1f,
-        animationSpec = tween(220),
-        label = "cardScale"
-    )
 
     Box(
         modifier = Modifier
-            .scale(cardScale.value)
             .padding(4.dp)
             .aspectRatio(1f)
             .clickable { onClick() }
-            .background(GameUiColors.CardInnerBg, RoundedCornerShape(12.dp))
+            .shadow(
+                elevation = 20.dp,
+                shape = RoundedCornerShape(12.dp),
+                ambientColor = neonColor,
+                spotColor = neonColor
+            )
+            .background(bgBrush, RoundedCornerShape(12.dp))
             .border(
                 width = 3.dp,
-                color = neonColor.value,
+                brush = borderBrush,
                 shape = RoundedCornerShape(12.dp)
             )
     ) {
@@ -73,9 +82,10 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
                 .padding(2.dp)
                 .border(
                     width = 2.dp,
-                    color = neonColor.value.copy(alpha = 0.25f),
+                    brush = borderBrush,
                     shape = RoundedCornerShape(10.dp)
                 )
+                .alpha(0.3f)
         )
 
         Box(
@@ -86,12 +96,12 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
                 // Large, glowing index for TV visibility
                 Text(
                     text = "#${index + 1}",
-                    color = neonColor.value,
+                    color = neonColor,
                     fontSize = 48.sp, // Large size
                     fontWeight = FontWeight.ExtraBold,
                     style = TextStyle(
                         shadow = Shadow(
-                            color = neonColor.value,
+                            color = neonColor,
                             blurRadius = 30f // Strong glow
                         )
                     )
@@ -99,13 +109,13 @@ fun CardView(card: Card, index: Int, onClick: () -> Unit) {
             } else {
                 when (card) {
                     is QuestionCard -> Text(
-                        text = "Q",
-                        color = Color.White,
+                        text = "X",
+                        color = Color.Red,
                         fontSize = 60.sp,
                         fontWeight = FontWeight.Black,
                         style = TextStyle(
                             shadow = Shadow(
-                                color = neonColor.value,
+                                color = neonColor,
                                 blurRadius = 20f
                             )
                         )

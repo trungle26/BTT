@@ -39,6 +39,10 @@ import com.trung.myapplication.game.model.EffectInstance
 import com.trung.myapplication.game.model.EffectType
 import com.trung.myapplication.game.model.Team
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+
 @Composable
 fun AllTeamsEffectCardSection(
     teams: List<Team>,
@@ -69,13 +73,17 @@ fun AllTeamsEffectCardSection(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
+            val teamCount = teams.size
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(teams.size) { teamIndex ->
+                items(
+                    count = teamCount,
+                    key = { index -> teams[index].id }
+                ) { teamIndex ->
                     val team = teams[teamIndex]
                     TeamEffectCardsCard(
                         team = team,
@@ -102,15 +110,13 @@ fun TeamEffectCardsCard(
 ) {
     val borderColor = if (isActive) GameUiColors.EffectBorderActive else GameUiColors.EffectBorderIdle
     val borderWidth = if (isActive) 3.dp else 1.dp
-    val cardScale = animateFloatAsState(
-        targetValue = if (isActive) 1.02f else 1f,
-        animationSpec = tween(durationMillis = 300),
-        label = "teamEffectScale"
-    )
+    
+    // Use graphicsLayer for more efficient scaling
+    val scale = if (isActive) 1.02f else 1f
 
     Surface(
         modifier = Modifier
-            .scale(cardScale.value)
+            .graphicsLayer(scaleX = scale, scaleY = scale)
             .fillMaxWidth()
             .border(borderWidth, borderColor, RoundedCornerShape(10.dp)),
         shape = RoundedCornerShape(10.dp),
@@ -132,18 +138,20 @@ fun TeamEffectCardsCard(
                 textAlign = TextAlign.Center
             )
 
-            // Effect cards display
+            // Effect cards display - Row with fixed height to avoid layout jumps
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center
             ) {
                 team.effectCards.forEach { effect ->
-                    EffectCardBadge(
-                        effect = effect,
-                        onClicked = { onMarkEffectUsed(effect.id) },
-                        widthDp = cardWidthDp,
-                        heightDp = cardHeightDp,
-                    )
+                    key(effect.id) {
+                        EffectCardBadge(
+                            effect = effect,
+                            onClicked = { onMarkEffectUsed(effect.id) },
+                            widthDp = cardWidthDp,
+                            heightDp = cardHeightDp,
+                        )
+                    }
                 }
             }
         }
@@ -161,11 +169,12 @@ fun EffectCardBadge(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(2.dp)
     ) {
+        val alpha = if (effect.used) 0.3f else 1f
         Box(
             modifier = Modifier
                 .size(width = widthDp.dp, height = heightDp.dp)
                 .clickable(enabled = !effect.used) { onClicked() }
-                .alpha(if (effect.used) 0.3f else 1f)
+                .graphicsLayer(alpha = alpha)
                 .background(Color.Black, RoundedCornerShape(4.dp))
                 .border(
                     width = 1.dp,
@@ -182,18 +191,19 @@ fun EffectCardBadge(
             )
             
             if (effect.used) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.4f)),
-                    contentAlignment = Alignment.Center
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color.Black.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(4.dp)
                 ) {
-                    Text(
-                        text = "ĐÃ DÙNG",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "ĐÃ DÙNG",
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -201,25 +211,26 @@ fun EffectCardBadge(
         // Show card name for clarity in QuestionPresentationScreen context
         Text(
             text = getEffectName(effect.type),
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             color = GameUiColors.TextPrimary.copy(alpha = 0.85f),
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.width(64.dp).padding(top = 2.dp)
+            modifier = Modifier.width(widthDp.dp).padding(top = 2.dp)
         )
     }
 }
 
+
 fun getEffectName(type: EffectType): String {
     return when (type) {
-        EffectType.SEE_FUTURE -> "Nhìn Tương Lai"
-        EffectType.SKIP -> "Bỏ Lượt"
+        EffectType.SEE_FUTURE -> "Nhìn Trước Tương Lai"
+        EffectType.SKIP -> "Bỏ Lượt Chơi"
         EffectType.ASSIGN -> "Tấn Công"
-        EffectType.STEAL -> "Giành Quyền"
-        EffectType.DOUBLE_POINTS -> "Sao Hy Vọng"
+        EffectType.STEAL -> "Giành Quyền Trả Lời"
+        EffectType.DOUBLE_POINTS -> "Ngôi Sao Hy Vọng"
         EffectType.ADD_ONE_TURN -> "Thêm Lượt"
         EffectType.NOPE -> "Vô Hiệu"
-        EffectType.GET_HELP -> "Trợ Giúp"
+        EffectType.GET_HELP -> "Xin Quyền Trợ Giúp"
     }
 }
 

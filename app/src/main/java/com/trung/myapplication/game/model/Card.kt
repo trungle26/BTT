@@ -20,7 +20,6 @@ data class QuestionCard(
     val correctAnswerText: String? = null,
     val kind: QuestionKind = QuestionKind.MULTIPLE_CHOICE,
     override val isRevealed: Boolean,
-    val isChallenge: Boolean = false
 ) : Card()
 
 data class BombCard(
@@ -42,6 +41,6 @@ enum class EffectType {
 data class EffectInstance(
     val id: String,
     val type: EffectType,
-    var used: Boolean = false
+    val used: Boolean = false
 )
 
