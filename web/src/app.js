@@ -1,5 +1,5 @@
 import { GameViewModel } from "./gameViewModel.js";
-import { EFFECT_META, EffectType, QuestionKind } from "./models.js";
+import { EFFECT_META, QuestionKind } from "./models.js";
 import { SfxPlayer } from "./sfxPlayer.js";
 
 const app = document.getElementById("app");
@@ -41,12 +41,6 @@ function activeTeamIndexOf(state) {
   return state.stolenTurnTeamIndex ?? state.activeTeamIndex;
 }
 
-function selectedQuestionCard(state) {
-  if (state.selectedCardIndex == null) return null;
-  const card = state.cards[state.selectedCardIndex];
-  return card?.type === "QUESTION" ? card : null;
-}
-
 function getEffectMeta(effectType) {
   const fallback = {
     name: effectType ?? "UNKNOWN EFFECT",
@@ -59,55 +53,10 @@ function getEffectMeta(effectType) {
 }
 
 function getEffectAvailability(state, teamId, effect) {
-  if (effect.used) return { usable: false, reason: "Da su dung" };
-
-  const activeTeamId = activeTeamIndexOf(state);
-  const isOwnerTurn = teamId === state.activeTeamIndex;
-  const isCurrentResponder = teamId === activeTeamId;
-  const card = selectedQuestionCard(state);
-  const isBoardScreen = !state.showingPresentationScreen && !state.showingStandings && !state.showingRules;
-  const isQuestionScreen = state.showingPresentationScreen && !!card;
-  const isQuestionOpen = isQuestionScreen && !card.isRevealed;
-  const hasAnswerSelected = state.selectedChoiceIndex != null;
-  const selectedAnswerIsWrong =
-    card?.kind === QuestionKind.MULTIPLE_CHOICE &&
-    hasAnswerSelected &&
-    state.selectedChoiceIndex !== card.correctChoiceIndex;
-
-  switch (effect.type) {
-    case EffectType.SEE_FUTURE:
-      return isBoardScreen && isOwnerTurn
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung truoc khi chon o trong luot minh" };
-    case EffectType.GET_HELP:
-      return isQuestionOpen && isCurrentResponder
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung sau khi mo cau hoi cua doi dang choi" };
-    case EffectType.STEAL:
-      return isQuestionOpen && selectedAnswerIsWrong && !isCurrentResponder
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung khi doi khac tra loi sai" };
-    case EffectType.NOPE:
-      return state.activeEffect
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung khi co the khac dang kich hoat" };
-    case EffectType.ASSIGN:
-      return { usable: false, reason: "Chua ho tro trong ban web hien tai" };
-    case EffectType.DOUBLE_POINTS:
-      return isQuestionOpen && isCurrentResponder && !hasAnswerSelected
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung truoc khi tra loi" };
-    case EffectType.ADD_ONE_TURN:
-      return (isBoardScreen || isQuestionOpen) && isOwnerTurn
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung trong luot cua doi so huu" };
-    case EffectType.SKIP:
-      return ((isBoardScreen && isOwnerTurn) || (isQuestionOpen && isCurrentResponder))
-        ? { usable: true }
-        : { usable: false, reason: "Chi dung truoc hoac sau khi mo o trong luot phu hop" };
-    default:
-      return { usable: false, reason: "Khong kha dung" };
-  }
+  void state;
+  void teamId;
+  if (effect.used) return { usable: false, reason: "Đã sử dụng" };
+  return { usable: true };
 }
 
 function scoreRow(state) {
@@ -173,16 +122,20 @@ function isBombPresentation(state) {
 
 function teardownOutgoingMedia(nextState) {
   const keepBombVideo = isBombPresentation(nextState);
+  const keepDiscussionVideo =
+    nextState.showingPresentationScreen && shouldShowDiscussionVideo(nextState);
   if (!keepBombVideo) mediaSnapshot.delete("bomb-video");
 
   app.querySelectorAll("video").forEach((video) => {
     const isPersistentDiscussion = video === persistentDiscussionVideo;
     const shouldKeep = keepBombVideo && video.dataset.mediaKey === "bomb-video";
-    if (shouldKeep) return;
+    if (shouldKeep || (isPersistentDiscussion && keepDiscussionVideo)) return;
 
     try {
       video.pause();
-      video.currentTime = 0;
+      if (!isPersistentDiscussion || !keepDiscussionVideo) {
+        video.currentTime = 0;
+      }
     } catch {
       // Ignore teardown errors from browser media internals.
     }
@@ -811,7 +764,8 @@ function handleAction(target) {
   }
 }
 
-app.addEventListener("click", (event) => {
+app.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
   handleAction(event.target);
 });
 

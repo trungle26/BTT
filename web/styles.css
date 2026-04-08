@@ -226,11 +226,14 @@ textarea {
 .ghost,
 .start-btn,
 .effect-pill,
+.effect-card,
+.game-card,
 .back-btn,
 .ghost-icon,
 .fab {
   border: 0;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .cta {
