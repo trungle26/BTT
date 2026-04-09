@@ -1,4 +1,5 @@
 import { GameViewModel } from "./gameViewModel.js";
+import { loadConfiguredCards } from "./cardsGenerator.js";
 import { EFFECT_META, QuestionKind } from "./models.js";
 import { SfxPlayer } from "./sfxPlayer.js";
 
@@ -8,7 +9,8 @@ const APP_MODE = urlParams.get("mode") === "display" ? "display" : "control";
 const IS_DISPLAY_MODE = APP_MODE === "display";
 const STATE_STORAGE_KEY = "btt:web:shared-state";
 const STATE_CHANNEL_NAME = "btt:web:sync";
-const vm = IS_DISPLAY_MODE ? null : new GameViewModel();
+const preloadedCards = IS_DISPLAY_MODE ? null : await loadConfiguredCards();
+const vm = IS_DISPLAY_MODE ? null : new GameViewModel({ initialCards: preloadedCards });
 const sfx = IS_DISPLAY_MODE ? new SfxPlayer() : null;
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(STATE_CHANNEL_NAME) : null;
 let mediaSnapshot = new Map();

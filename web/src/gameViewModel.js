@@ -1,4 +1,4 @@
-import { generateCards } from "./cardsGenerator.js";
+import { generateFallbackCards } from "./cardsGenerator.js";
 import { createEffectInstance, createTeam, EffectType, QuestionKind } from "./models.js";
 
 function modulo(value, n) {
@@ -45,7 +45,8 @@ function effectOwnerIndex(effect) {
 }
 
 export class GameViewModel {
-  constructor() {
+  constructor(options = {}) {
+    this.initialCards = options.initialCards ?? null;
     this.listeners = new Set();
     this.timerInterval = null;
     this.remainingTimeMs = 20_999;
@@ -138,7 +139,7 @@ export class GameViewModel {
   }
 
   startNewGame(seed = null) {
-    const cards = generateCards(seed);
+    const cards = cloneCards(this.initialCards ?? generateFallbackCards(seed));
     const effectTypes = Object.values(EffectType);
     const pool = [];
     effectTypes.forEach((type) => {
