@@ -113,6 +113,11 @@ function scoreRow(state) {
             <div class="team-card ${team.id === activeIdx ? "active" : ""}">
               <div class="team-name">${esc(team.name)}</div>
               <div class="team-score">${team.score}</div>
+              ${
+                !IS_DISPLAY_MODE
+                  ? `<div class="team-turns">Lượt còn: <strong>${state.turnsRemainingByTeam?.[team.id] ?? state.roundsPerTeam ?? 0}</strong></div>`
+                  : ""
+              }
             </div>
           `,
         )

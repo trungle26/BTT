@@ -186,6 +186,17 @@ textarea {
   font-size: clamp(15px, 1.4vw, 22px);
 }
 
+.team-turns {
+  margin-top: 4px;
+  font-size: clamp(10px, 0.9vw, 13px);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.team-turns strong {
+  color: var(--yellow);
+  font-family: "Orbitron", sans-serif;
+}
+
 .board-section {
   flex: 1;
   min-height: 0;
