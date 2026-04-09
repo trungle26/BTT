@@ -78,6 +78,7 @@ export class GameViewModel {
           : createTurnsRemaining(nextState.teams.length, nextState.roundsPerTeam ?? this.roundsPerTeam),
       turnOwnerTeamIndex: nextState.turnOwnerTeamIndex ?? null,
       timerMs: nextState.timerMs ?? null,
+      supportVideoForcedClosed: Boolean(nextState.supportVideoForcedClosed),
       isTimerRunning: false,
       isDiscussionPhase: false,
     };
@@ -100,6 +101,7 @@ export class GameViewModel {
       selectedCardIndex: null,
       selectedChoiceIndex: null,
       answerTimedOut: false,
+      supportVideoForcedClosed: false,
       showingRules: true,
       isRevealingAnswer: false,
       isDiscussionPhase: false,
@@ -191,6 +193,7 @@ export class GameViewModel {
       turnOwnerTeamIndex: state.activeTeamIndex,
       selectedChoiceIndex: null,
       answerTimedOut: false,
+      supportVideoForcedClosed: false,
       isRevealingAnswer: false,
     }));
 
@@ -319,6 +322,7 @@ export class GameViewModel {
     this.setState((state) => ({
       ...state,
       timerMs: this.remainingTimeMs,
+      supportVideoForcedClosed: false,
       isDiscussionPhase: true,
       isTimerRunning: true,
     }));
@@ -328,6 +332,7 @@ export class GameViewModel {
         this.setState((state) => ({
           ...state,
           timerMs: this.remainingTimeMs,
+          supportVideoForcedClosed: false,
           isDiscussionPhase: inDiscussionPhase,
           isTimerRunning: true,
         }));
@@ -341,6 +346,7 @@ export class GameViewModel {
         this.setState((state) => ({
           ...state,
           timerMs: this.remainingTimeMs,
+          supportVideoForcedClosed: false,
           isDiscussionPhase: false,
           isTimerRunning: true,
         }));
@@ -351,6 +357,7 @@ export class GameViewModel {
       this.setState((state) => ({
         ...state,
         timerMs: 0,
+        supportVideoForcedClosed: false,
         isDiscussionPhase: false,
         isTimerRunning: false,
       }));
@@ -371,6 +378,7 @@ export class GameViewModel {
     this.setState((state) => ({
       ...state,
       timerMs: 20_999,
+      supportVideoForcedClosed: false,
       isDiscussionPhase: false,
       isTimerRunning: false,
     }));
@@ -381,6 +389,7 @@ export class GameViewModel {
     this.remainingTimeMs = 20_999;
     this.setState((state) => ({
       ...state,
+      supportVideoForcedClosed: false,
       isDiscussionPhase: false,
       isTimerRunning: false,
     }));
@@ -399,6 +408,7 @@ export class GameViewModel {
       ...current,
       selectedChoiceIndex: selectedChoice,
       answerTimedOut: choiceIndex < 0,
+      supportVideoForcedClosed: false,
       isRevealingAnswer: false,
     }));
   }
@@ -409,10 +419,12 @@ export class GameViewModel {
     if (selectedCardIndex == null) return;
     const card = state.cards[selectedCardIndex];
     if (!card || card.type !== "QUESTION") return;
+    const didTimeoutWithoutChoice = state.selectedChoiceIndex == null;
 
     this.setState((current) => ({
       ...current,
-      answerTimedOut: true,
+      answerTimedOut: didTimeoutWithoutChoice,
+      supportVideoForcedClosed: false,
       isRevealingAnswer: false,
       isTimerRunning: false,
       isDiscussionPhase: false,
@@ -431,6 +443,7 @@ export class GameViewModel {
     this.setState((current) => ({
       ...current,
       answerTimedOut: false,
+      supportVideoForcedClosed: false,
       isRevealingAnswer: true,
       isTimerRunning: false,
       isDiscussionPhase: false,
@@ -442,17 +455,30 @@ export class GameViewModel {
   forceTimeout() {
     const state = this.state;
     if (state.selectedCardIndex == null) return;
+    const didTimeoutWithoutChoice = state.selectedChoiceIndex == null;
     this.cancelCurrentTimer();
     this.setState((current) => ({
       ...current,
-      selectedChoiceIndex: null,
-      answerTimedOut: true,
+      answerTimedOut: didTimeoutWithoutChoice,
+      supportVideoForcedClosed: false,
       isRevealingAnswer: false,
       isTimerRunning: false,
       isDiscussionPhase: false,
       timerMs: 0,
     }));
     this.onAnswerTimeout();
+  }
+
+  closeGetHelpState() {
+    this.cancelCurrentTimer();
+    this.remainingTimeMs = 20_999;
+    this.setState((state) => ({
+      ...state,
+      timerMs: 20_999,
+      supportVideoForcedClosed: true,
+      isDiscussionPhase: false,
+      isTimerRunning: false,
+    }));
   }
 
   closePresentationScreen() {
@@ -497,6 +523,7 @@ export class GameViewModel {
         turnOwnerTeamIndex: null,
         selectedChoiceIndex: null,
         answerTimedOut: false,
+        supportVideoForcedClosed: false,
         timerMs: null,
         isRevealingAnswer: false,
         isDiscussionPhase: false,
@@ -547,6 +574,7 @@ export class GameViewModel {
       turnOwnerTeamIndex: null,
       selectedChoiceIndex: null,
       answerTimedOut: false,
+      supportVideoForcedClosed: false,
       timerMs: null,
       isRevealingAnswer: false,
       isDiscussionPhase: false,

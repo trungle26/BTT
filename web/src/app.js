@@ -17,6 +17,8 @@ let mediaSnapshot = new Map();
 let previousState = null;
 let discussionVideoPendingEnd = false;
 let currentState = loadSharedState();
+let lastActionNode = null;
+let lastActionAt = 0;
 const persistentBombShell = document.createElement("div");
 persistentBombShell.className = "bomb-video-shell";
 persistentBombShell.innerHTML = `
@@ -104,6 +106,16 @@ function resolveActionNode(target) {
   const element =
     target instanceof Element ? target : target?.parentElement instanceof Element ? target.parentElement : null;
   return element?.closest("[data-action]") ?? null;
+}
+
+function shouldSkipDuplicateAction(actionNode) {
+  const now = performance.now();
+  if (actionNode === lastActionNode && now - lastActionAt < 250) {
+    return true;
+  }
+  lastActionNode = actionNode;
+  lastActionAt = now;
+  return false;
 }
 
 function scoreRow(state) {
@@ -265,7 +277,7 @@ function restoreMediaSnapshot() {
 }
 
 function shouldShowDiscussionVideo(state) {
-  return state.isDiscussionPhase || discussionVideoPendingEnd;
+  return !state.supportVideoForcedClosed && (state.isDiscussionPhase || discussionVideoPendingEnd);
 }
 
 function syncPersistentBombVideo(state) {
@@ -307,6 +319,9 @@ function syncPersistentDiscussionVideo(state) {
     return;
   }
 
+  if (state.supportVideoForcedClosed || !state.showingPresentationScreen) {
+    discussionVideoPendingEnd = false;
+  }
   video.pause();
   if (persistentDiscussionShell.parentElement) {
     persistentDiscussionShell.parentElement.removeChild(persistentDiscussionShell);
@@ -351,6 +366,9 @@ function renderManualControlPanel(state, card = null) {
     isQuestionCard &&
     [QuestionKind.MULTIPLE_CHOICE, QuestionKind.ESSAY].includes(card.kind);
   const canRunQuestionActions = supportsTimer && !card.isRevealed;
+  const canRevealCorrectAnswer =
+    isQuestionCard &&
+    !state.isRevealingAnswer;
 
   return `
     <section class="panel manual-control-panel">
@@ -363,6 +381,7 @@ function renderManualControlPanel(state, card = null) {
           <div class="manual-label">Điểm số</div>
           <div class="manual-buttons">
             <button class="control-btn control-btn-negative" data-action="adjust-score" data-delta="-5">-5</button>
+            <button class="control-btn control-btn-negative" data-action="adjust-score" data-delta="-20">-20</button>
             <button class="control-btn" data-action="adjust-score" data-delta="10">+10</button>
             <button class="control-btn" data-action="adjust-score" data-delta="20">+20</button>
           </div>
@@ -373,8 +392,9 @@ function renderManualControlPanel(state, card = null) {
             <button class="control-btn" data-action="start-question-timer" ${canRunQuestionActions && !state.isTimerRunning && !state.isDiscussionPhase ? "" : "disabled"}>Begin Timer</button>
             <button class="control-btn" data-action="reset-question-timer" ${supportsTimer && !card?.isRevealed ? "" : "disabled"}>Reset Timer</button>
             <button class="control-btn" data-action="start-get-help" ${canRunQuestionActions ? "" : "disabled"}>Show Get Help</button>
+            <button class="control-btn" data-action="close-get-help" ${state.isDiscussionPhase ? "" : "disabled"}>Close Get Help</button>
             <button class="control-btn control-btn-warn" data-action="timeout-question" ${canRunQuestionActions ? "" : "disabled"}>Timeout</button>
-            <button class="control-btn control-btn-accent" data-action="show-correct-answer" ${isQuestionCard && !card.isRevealed ? "" : "disabled"}>Show Correct Answer</button>
+            <button class="control-btn control-btn-accent" data-action="show-correct-answer" ${canRevealCorrectAnswer ? "" : "disabled"}>Show Correct Answer</button>
           </div>
         </div>
       </div>
@@ -394,10 +414,10 @@ function renderQuestionChoices(card, state) {
           const isAnswered = state.selectedChoiceIndex != null;
           const isCorrect = idx === card.correctChoiceIndex;
           let classes = "choice";
-          if (!card.isRevealed && isSelected) classes += " selected";
+          if (isSelected && (!card.isRevealed || !state.isRevealingAnswer)) classes += " selected";
           if (card.isRevealed && state.answerTimedOut && isCorrect && !isAnswered) classes += " timeout";
-          if (card.isRevealed && isCorrect && (isAnswered || state.isRevealingAnswer)) classes += " correct";
-          if (card.isRevealed && isSelected && !isCorrect && isAnswered) classes += " wrong";
+          if (card.isRevealed && state.isRevealingAnswer && isCorrect) classes += " correct";
+          if (card.isRevealed && state.isRevealingAnswer && isSelected && !isCorrect) classes += " wrong";
 
           return `
             <button
@@ -413,9 +433,9 @@ function renderQuestionChoices(card, state) {
                   card.isRevealed
                     ? state.answerTimedOut && isCorrect && !isAnswered
                       ? "⏱"
-                      : isCorrect && (isAnswered || state.isRevealingAnswer)
+                      : state.isRevealingAnswer && isCorrect
                         ? "✓"
-                        : isSelected && !isCorrect && isAnswered
+                        : state.isRevealingAnswer && isSelected && !isCorrect
                           ? "✕"
                           : ""
                     : ""
@@ -444,16 +464,11 @@ function renderQuestionBody(card, state) {
         <h2 class="question-kind">${esc(titleIndex)}${title}</h2>
         <p class="question-text">${esc(card.text)}</p>
         ${
-          !card.isRevealed &&
-          !state.isTimerRunning &&
-          !state.isDiscussionPhase &&
-          [QuestionKind.MULTIPLE_CHOICE, QuestionKind.ESSAY].includes(card.kind)
-            ? `<div class="start-hint">${IS_DISPLAY_MODE ? "Chờ quản trò bắt đầu đếm giờ" : "Dùng bảng điều khiển để bắt đầu đếm giờ"}</div>`
-            : ""
+          ""
         }
         ${renderQuestionChoices(card, state)}
         ${
-          card.kind === QuestionKind.ESSAY && card.isRevealed
+          card.kind === QuestionKind.ESSAY && card.isRevealed && state.isRevealingAnswer
             ? `
               <div class="essay-answer">
                 <div class="essay-label">ĐÁP ÁN ĐÚNG</div>
@@ -675,13 +690,6 @@ function ruleSummaryPage() {
         <div class="tile">🧠 40 câu hỏi và thử thách</div>
         <div class="tile">🎛 Quản trò điều khiển trực tiếp</div>
       </div>
-      <p class="rules-subtitle">Quản trò thao tác tay:</p>
-      <div class="rule-grid cols-4">
-        <div class="tile">▶ Begin Timer: bắt đầu đếm giờ</div>
-        <div class="tile">🔁 Reset Timer: đưa đồng hồ về mốc ban đầu</div>
-        <div class="tile">🆘 Show Get Help: phát video trợ giúp</div>
-        <div class="tile">✅ Show Correct Answer: hiện đáp án đúng</div>
-      </div>
       <p class="summary-copy">Các đội hãy chơi một cách công bằng và vui vẻ nhé!</p>
     </div>
   `;
@@ -749,6 +757,7 @@ function handleAction(target) {
 
   const actionNode = resolveActionNode(target);
   if (!actionNode) return;
+  if (shouldSkipDuplicateAction(actionNode)) return;
 
   const action = actionNode.dataset.action;
   const state = vm.state;
@@ -796,6 +805,12 @@ function handleAction(target) {
 
   if (action === "start-get-help") {
     vm.startGetHelpTimer();
+    return;
+  }
+
+  if (action === "close-get-help") {
+    discussionVideoPendingEnd = false;
+    vm.closeGetHelpState();
     return;
   }
 
@@ -853,6 +868,9 @@ function handleAction(target) {
 if (!IS_DISPLAY_MODE) {
   app.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    handleAction(event.target);
+  });
+  app.addEventListener("click", (event) => {
     handleAction(event.target);
   });
 }

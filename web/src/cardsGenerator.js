@@ -5,23 +5,6 @@ const DATA_SOURCES = [
   { path: "./data/questions.csv", kind: "csv" },
 ];
 
-function random(seed) {
-  let s = seed ?? Math.floor(Math.random() * 2147483647);
-  return () => {
-    s = (s * 48271) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-}
-
-function shuffled(list, rnd) {
-  const out = [...list];
-  for (let i = out.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rnd() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 function normalizeRow(row) {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [
@@ -135,7 +118,7 @@ export async function loadConfiguredCards(seed = null) {
 }
 
 export function generateFallbackCards(seed = null) {
-  const rnd = random(seed ?? Date.now());
+  void seed;
   const cards = [];
 
   const sampleQuestions = [
@@ -213,7 +196,7 @@ export function generateFallbackCards(seed = null) {
 
   let idx = cards.length;
   while (cards.length < 40) {
-    const isEssay = rnd() > 0.5;
+    const isEssay = idx % 2 === 0;
     if (isEssay) {
       cards.push(
         createQuestionCard({
@@ -231,7 +214,7 @@ export function generateFallbackCards(seed = null) {
           id: `q_${idx}`,
           text: `Câu hỏi trắc nghiệm mẫu #${idx}?`,
           choices: ["Đáp án 1", "Đáp án 2", "Đáp án 3", "Đáp án 4"],
-          correctChoiceIndex: Math.floor(rnd() * 4),
+          correctChoiceIndex: idx % 4,
         }),
       );
     }
@@ -239,8 +222,8 @@ export function generateFallbackCards(seed = null) {
   }
 
   for (let i = 0; i < 8; i += 1) {
-    cards.push(createBombCard(`bomb_${Math.floor(rnd() * 1000)}`));
+    cards.push(createBombCard(`bomb_${41 + i}`));
   }
 
-  return shuffled(cards, rnd);
+  return cards;
 }
