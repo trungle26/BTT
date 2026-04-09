@@ -1,5 +1,5 @@
 import { generateFallbackCards } from "./cardsGenerator.js";
-import { createEffectInstance, createTeam, EffectType, QuestionKind } from "./models.js";
+import { createTeam, QuestionKind } from "./models.js";
 
 function modulo(value, n) {
   return ((value % n) + n) % n;
@@ -39,19 +39,12 @@ function findNextEligibleTeamIndex(turnsRemainingByTeam, currentIndex) {
   return null;
 }
 
-function effectOwnerIndex(effect) {
-  const raw = Number.parseInt(String(effect?.id ?? "").split("_")[0], 10);
-  return Number.isNaN(raw) ? null : raw - 1;
-}
-
 export class GameViewModel {
   constructor(options = {}) {
     this.initialCards = options.initialCards ?? null;
     this.listeners = new Set();
     this.timerInterval = null;
     this.remainingTimeMs = 20_999;
-    this.isDoublePoint = false;
-    this.isOneMoreTurn = false;
     this.roundsPerTeam = 5;
     this.state = this.createInitialState();
     this.startNewGame();
@@ -63,8 +56,6 @@ export class GameViewModel {
       state: this.state,
       runtime: {
         remainingTimeMs: this.remainingTimeMs,
-        isDoublePoint: this.isDoublePoint,
-        isOneMoreTurn: this.isOneMoreTurn,
       },
     };
   }
@@ -77,8 +68,6 @@ export class GameViewModel {
 
     this.cancelCurrentTimer();
     this.remainingTimeMs = snapshot.runtime?.remainingTimeMs ?? nextState.timerMs ?? 20_999;
-    this.isDoublePoint = Boolean(snapshot.runtime?.isDoublePoint);
-    this.isOneMoreTurn = Boolean(snapshot.runtime?.isOneMoreTurn);
 
     const restoredState = {
       ...this.createInitialState(),
@@ -91,7 +80,6 @@ export class GameViewModel {
       timerMs: nextState.timerMs ?? null,
       isTimerRunning: false,
       isDiscussionPhase: false,
-      showEffectSheet: false,
     };
 
     this.setState(restoredState);
@@ -103,8 +91,6 @@ export class GameViewModel {
       cards: [],
       teams: [],
       activeTeamIndex: 0,
-      stolenTurnTeamIndex: null,
-      activeEffect: null,
       timerMs: null,
       roundsPerTeam: this.roundsPerTeam,
       gameOver: false,
@@ -116,10 +102,8 @@ export class GameViewModel {
       answerTimedOut: false,
       showingRules: true,
       isRevealingAnswer: false,
-      isEffectNegated: false,
       isDiscussionPhase: false,
       isTimerRunning: false,
-      showEffectSheet: false,
       rulesPage: 0,
       turnsRemainingByTeam: [],
       turnOwnerTeamIndex: null,
@@ -140,26 +124,13 @@ export class GameViewModel {
 
   startNewGame(seed = null) {
     const cards = cloneCards(this.initialCards ?? generateFallbackCards(seed));
-    const effectTypes = Object.values(EffectType);
-    const pool = [];
-    effectTypes.forEach((type) => {
-      for (let i = 0; i < 3; i += 1) pool.push(type);
-    });
-
     const teams = [];
-    const teamNames = ["Giuse", "Don Bosco", "Đaminh Savio", "Gioan Tông đồ", "Mẹ Vô Nhiễm", "Phaolo Trở Lại", "Phanxico Assisi","Anton Padua"]
+    const teamNames = ["Giuse", "Don Bosco", "Đaminh Savio", "Gioan Tông đồ", "Mẹ Vô Nhiễm", "Phaolo Trở Lại", "Phanxico Assisi", "Anton Padua"];
     for (let i = 1; i <= 8; i += 1) {
-      const hand = [];
-      for (let h = 0; h < 3; h += 1) {
-        const pick = Math.floor(Math.random() * pool.length);
-        hand.push(createEffectInstance(`${i}_${h}`, pool.splice(pick, 1)[0]));
-      }
-      teams.push(createTeam(i - 1, teamNames[i - 1], hand, 100));
+      teams.push(createTeam(i - 1, teamNames[i - 1], [], 100));
     }
 
     this.cancelTimer();
-    this.isDoublePoint = false;
-    this.isOneMoreTurn = false;
 
     this.setState({
       ...this.createInitialState(),
@@ -171,155 +142,6 @@ export class GameViewModel {
       showingRules: true,
       turnsRemainingByTeam: createTurnsRemaining(teams.length, this.roundsPerTeam),
     });
-  }
-
-  markEffectCardUsed(teamId, effectId) {
-    this.setState((state) => {
-      const teams = cloneTeams(state.teams);
-      const team = teams[teamId];
-      const idx = team.effectCards.findIndex((effect) => effect.id === effectId);
-      if (idx !== -1) {
-        team.effectCards[idx] = {
-          ...team.effectCards[idx],
-          used: true,
-        };
-      }
-      return { ...state, teams };
-    });
-  }
-
-  useEffectCard(teamId, effectId) {
-    const team = this.state.teams[teamId];
-    if (!team) return;
-    const effectCard = team.effectCards.find((item) => item.id === effectId);
-    if (!effectCard || effectCard.used) return;
-
-    this.markEffectCardUsed(teamId, effectId);
-
-    if (effectCard.type === EffectType.NOPE) {
-      this.resetTimer();
-      const currentEffect = this.state.activeEffect;
-      if (currentEffect) {
-        const nowNegated = !this.state.isEffectNegated;
-        this.setState((state) => ({ ...state, isEffectNegated: nowNegated }));
-        if (nowNegated) this.negateActiveEffect(currentEffect);
-        else this.restoreActiveEffect(currentEffect);
-      }
-      return;
-    }
-
-    this.setState((state) => ({
-      ...state,
-      activeEffect: effectCard,
-      isEffectNegated: false,
-    }));
-    this.applyEffect(effectCard, teamId);
-  }
-
-  applyEffect(effect, teamId) {
-    switch (effect.type) {
-      case EffectType.GET_HELP:
-        this.startGetHelpTimer();
-        break;
-      case EffectType.STEAL:
-        this.setState((state) => ({
-          ...state,
-          stolenTurnTeamIndex: teamId,
-        }));
-        this.resetTimer();
-        this.isDoublePoint = false;
-        break;
-      case EffectType.DOUBLE_POINTS:
-        this.isDoublePoint = true;
-        break;
-      case EffectType.ADD_ONE_TURN:
-        this.isOneMoreTurn = true;
-        this.setState((state) => {
-          const turnsRemainingByTeam = normalizeTurnsRemaining(state, this.roundsPerTeam);
-          turnsRemainingByTeam[teamId] += 1;
-          return { ...state, turnsRemainingByTeam };
-        });
-        break;
-      case EffectType.SKIP:
-        this.advanceTurn();
-        break;
-      default:
-        break;
-    }
-  }
-
-  negateActiveEffect(effect) {
-    switch (effect.type) {
-      case EffectType.GET_HELP:
-        this.resetTimer();
-        break;
-      case EffectType.STEAL:
-        this.setState((state) => ({ ...state, stolenTurnTeamIndex: null }));
-        break;
-      case EffectType.DOUBLE_POINTS:
-        this.isDoublePoint = false;
-        break;
-      case EffectType.ADD_ONE_TURN:
-        this.isOneMoreTurn = false;
-        this.setState((state) => {
-          const ownerIndex = effectOwnerIndex(effect);
-          if (ownerIndex == null) return state;
-          const turnsRemainingByTeam = normalizeTurnsRemaining(state, this.roundsPerTeam);
-          if (turnsRemainingByTeam[ownerIndex] > 0) {
-            turnsRemainingByTeam[ownerIndex] -= 1;
-          }
-          return { ...state, turnsRemainingByTeam };
-        });
-        break;
-      case EffectType.SKIP:
-        this.resetTimer();
-        this.setState((state) => ({
-          ...state,
-          activeTeamIndex: modulo(state.activeTeamIndex - 1, state.teams.length),
-        }));
-        break;
-      default:
-        break;
-    }
-  }
-
-  restoreActiveEffect(effect) {
-    switch (effect.type) {
-      case EffectType.GET_HELP:
-        this.startGetHelpTimer();
-        break;
-      case EffectType.STEAL: {
-        const originalTeamId = Number.parseInt(effect.id.split("_")[0], 10) - 1;
-        if (!Number.isNaN(originalTeamId)) {
-          this.setState((state) => ({
-            ...state,
-            stolenTurnTeamIndex: originalTeamId,
-          }));
-          this.resetTimer();
-          this.isDoublePoint = false;
-        }
-        break;
-      }
-      case EffectType.DOUBLE_POINTS:
-        this.isDoublePoint = true;
-        break;
-      case EffectType.ADD_ONE_TURN:
-        this.isOneMoreTurn = true;
-        this.setState((state) => {
-          const ownerIndex = effectOwnerIndex(effect);
-          if (ownerIndex == null) return state;
-          const turnsRemainingByTeam = normalizeTurnsRemaining(state, this.roundsPerTeam);
-          turnsRemainingByTeam[ownerIndex] += 1;
-          return { ...state, turnsRemainingByTeam };
-        });
-        break;
-      case EffectType.SKIP:
-        this.resetTimer();
-        this.advanceTurn();
-        break;
-      default:
-        break;
-    }
   }
 
   replaceCardIfMustBeChallenge(index) {
@@ -370,14 +192,12 @@ export class GameViewModel {
       selectedChoiceIndex: null,
       answerTimedOut: false,
       isRevealingAnswer: false,
-      showEffectSheet: false,
     }));
 
     const card = this.state.cards[index];
     if (!card) return;
 
     if (card.type === "BOMB") {
-      this.applyScoreToActive(-20);
       this.markRevealed(index);
       return;
     }
@@ -424,9 +244,7 @@ export class GameViewModel {
   applyScoreToActive(delta) {
     this.setState((state) => {
       const teams = cloneTeams(state.teams);
-      const index =
-        state.stolenTurnTeamIndex == null ? state.activeTeamIndex : state.stolenTurnTeamIndex;
-      teams[index].score += delta;
+      teams[state.activeTeamIndex].score += delta;
       return { ...state, teams };
     });
   }
@@ -581,6 +399,7 @@ export class GameViewModel {
       ...current,
       selectedChoiceIndex: selectedChoice,
       answerTimedOut: choiceIndex < 0,
+      isRevealingAnswer: false,
     }));
   }
 
@@ -591,18 +410,9 @@ export class GameViewModel {
     const card = state.cards[selectedCardIndex];
     if (!card || card.type !== "QUESTION") return;
 
-    const choiceIndex = state.selectedChoiceIndex ?? -1;
-    const didTimeout = choiceIndex < 0;
-
-    if (card.kind === QuestionKind.MULTIPLE_CHOICE) {
-      let points = choiceIndex === card.correctChoiceIndex ? 10 : -5;
-      if (this.isDoublePoint && points > 0) points *= 2;
-      this.applyScoreToActive(points);
-    }
-
     this.setState((current) => ({
       ...current,
-      answerTimedOut: didTimeout,
+      answerTimedOut: true,
       isRevealingAnswer: false,
       isTimerRunning: false,
       isDiscussionPhase: false,
@@ -610,13 +420,46 @@ export class GameViewModel {
     this.markRevealed(selectedCardIndex);
   }
 
+  revealCorrectAnswer() {
+    const state = this.state;
+    const selectedCardIndex = state.selectedCardIndex;
+    if (selectedCardIndex == null) return;
+    const card = state.cards[selectedCardIndex];
+    if (!card || card.type !== "QUESTION") return;
+
+    this.cancelCurrentTimer();
+    this.setState((current) => ({
+      ...current,
+      answerTimedOut: false,
+      isRevealingAnswer: true,
+      isTimerRunning: false,
+      isDiscussionPhase: false,
+      timerMs: current.timerMs ?? 0,
+    }));
+    this.markRevealed(selectedCardIndex);
+  }
+
+  forceTimeout() {
+    const state = this.state;
+    if (state.selectedCardIndex == null) return;
+    this.cancelCurrentTimer();
+    this.setState((current) => ({
+      ...current,
+      selectedChoiceIndex: null,
+      answerTimedOut: true,
+      isRevealingAnswer: false,
+      isTimerRunning: false,
+      isDiscussionPhase: false,
+      timerMs: 0,
+    }));
+    this.onAnswerTimeout();
+  }
+
   closePresentationScreen() {
     this.cancelTimer();
     const shouldConsumeTurn =
       this.state.selectedCardIndex != null &&
       this.state.cards[this.state.selectedCardIndex]?.isRevealed;
-    const keepCurrentTeam = this.isOneMoreTurn;
-    this.isOneMoreTurn = false;
 
     this.setState((state) => {
       const turnsRemainingByTeam = normalizeTurnsRemaining(state, this.roundsPerTeam);
@@ -634,8 +477,6 @@ export class GameViewModel {
         if (!hiddenCardsRemain) {
           gameOver = true;
           showingStandings = true;
-        } else if (keepCurrentTeam && turnsRemainingByTeam[turnOwnerTeamIndex] > 0) {
-          activeTeamIndex = turnOwnerTeamIndex;
         } else {
           const nextActiveTeamIndex = findNextEligibleTeamIndex(turnsRemainingByTeam, turnOwnerTeamIndex);
           if (nextActiveTeamIndex == null) {
@@ -656,12 +497,10 @@ export class GameViewModel {
         turnOwnerTeamIndex: null,
         selectedChoiceIndex: null,
         answerTimedOut: false,
-        stolenTurnTeamIndex: null,
         timerMs: null,
         isRevealingAnswer: false,
         isDiscussionPhase: false,
         isTimerRunning: false,
-        showEffectSheet: false,
         turnsRemainingByTeam,
       };
     });
@@ -679,8 +518,18 @@ export class GameViewModel {
     this.setState((state) => ({
       ...state,
       activeTeamIndex: modulo(state.activeTeamIndex + delta, state.teams.length),
-      stolenTurnTeamIndex: null,
     }));
+  }
+
+  selectActiveTeam(teamId) {
+    this.setState((state) => {
+      if (teamId < 0 || teamId >= state.teams.length) return state;
+      return {
+        ...state,
+        activeTeamIndex: teamId,
+        turnOwnerTeamIndex: state.showingPresentationScreen ? teamId : state.turnOwnerTeamIndex,
+      };
+    });
   }
 
   closeRulesScreen() {
@@ -698,16 +547,10 @@ export class GameViewModel {
       turnOwnerTeamIndex: null,
       selectedChoiceIndex: null,
       answerTimedOut: false,
-      stolenTurnTeamIndex: null,
       timerMs: null,
       isRevealingAnswer: false,
       isDiscussionPhase: false,
       isTimerRunning: false,
-      showEffectSheet: false,
     }));
-  }
-
-  setShowEffectSheet(show) {
-    this.setState((state) => ({ ...state, showEffectSheet: show }));
   }
 }

@@ -167,11 +167,16 @@ textarea {
 }
 
 .team-card {
+  width: 100%;
   padding: 7px 6px;
   border-radius: 12px;
   background: rgba(17, 10, 34, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
+}
+
+.control-team-card {
+  appearance: none;
 }
 
 .team-card.active {
@@ -201,6 +206,83 @@ textarea {
 .team-turns strong {
   color: var(--yellow);
   font-family: "Orbitron", sans-serif;
+}
+
+.manual-control-panel {
+  padding: 10px 12px;
+}
+
+.manual-control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.manual-group {
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.manual-label {
+  margin-bottom: 8px;
+  color: var(--yellow);
+  font-family: "Orbitron", sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.manual-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.control-btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(0, 245, 255, 0.16);
+  border: 1px solid rgba(0, 245, 255, 0.32);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.control-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.control-btn-negative {
+  background: rgba(255, 23, 68, 0.18);
+  border-color: rgba(255, 64, 129, 0.4);
+}
+
+.control-btn-warn {
+  background: rgba(255, 234, 0, 0.16);
+  border-color: rgba(255, 234, 0, 0.32);
+  color: #1a0033;
+}
+
+.control-btn-accent {
+  background: rgba(0, 230, 118, 0.18);
+  border-color: rgba(178, 255, 89, 0.38);
+}
+
+.control-team-indicator {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  text-align: right;
+}
+
+.control-team-indicator strong {
+  color: var(--yellow);
 }
 
 .board-section {
@@ -530,7 +612,7 @@ textarea {
 
 .question-sidebar {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: repeat(3, auto);
   gap: 8px;
   align-content: start;
   overflow: hidden;
@@ -541,7 +623,7 @@ textarea {
   min-height: 0;
   padding: 8px;
   border-radius: 18px;
-  cursor: pointer;
+  cursor: default;
   overflow: hidden;
 }
 
@@ -800,6 +882,13 @@ textarea {
   overflow: hidden;
 }
 
+.bomb-video-host,
+.bomb-video-shell {
+  width: 100%;
+  height: 100%;
+  min-height: min(68vh, 620px);
+}
+
 .bomb-video {
   display: block;
   width: 100%;
@@ -1000,6 +1089,10 @@ textarea {
 
   .question-layout {
     grid-template-columns: minmax(0, 1.85fr) minmax(210px, 0.65fr);
+  }
+
+  .manual-control-grid {
+    grid-template-columns: 1fr;
   }
 
   .effect-grid {

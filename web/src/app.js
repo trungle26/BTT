@@ -17,6 +17,19 @@ let mediaSnapshot = new Map();
 let previousState = null;
 let discussionVideoPendingEnd = false;
 let currentState = loadSharedState();
+const persistentBombShell = document.createElement("div");
+persistentBombShell.className = "bomb-video-shell";
+persistentBombShell.innerHTML = `
+  <video
+    class="bomb-video"
+    data-persistent-media="bomb-video"
+    src="./assets/media/explosion.mp4"
+    autoplay
+    playsinline
+    preload="auto"
+  ></video>
+`;
+const persistentBombVideo = persistentBombShell.querySelector("video");
 const persistentDiscussionShell = document.createElement("div");
 persistentDiscussionShell.className = "discussion-shell";
 persistentDiscussionShell.innerHTML = `
@@ -84,25 +97,13 @@ function esc(text) {
 }
 
 function activeTeamIndexOf(state) {
-  return state.stolenTurnTeamIndex ?? state.activeTeamIndex;
+  return state.activeTeamIndex;
 }
 
-function getEffectMeta(effectType) {
-  const fallback = {
-    name: effectType ?? "UNKNOWN EFFECT",
-    image: "nhin_trc_tuong_lai.jpg",
-    desc: "Chưa có mô tả.",
-    timing: "Chưa xác định.",
-    usability: "Chưa xác định.",
-  };
-  return { ...fallback, ...(EFFECT_META[effectType] ?? {}) };
-}
-
-function getEffectAvailability(state, teamId, effect) {
-  void state;
-  void teamId;
-  if (effect.used) return { usable: false, reason: "Đã sử dụng" };
-  return { usable: true };
+function resolveActionNode(target) {
+  const element =
+    target instanceof Element ? target : target?.parentElement instanceof Element ? target.parentElement : null;
+  return element?.closest("[data-action]") ?? null;
 }
 
 function scoreRow(state) {
@@ -111,8 +112,8 @@ function scoreRow(state) {
     <div class="score-row">
       ${state.teams
         .map(
-          (team) => `
-            <div class="team-card ${team.id === activeIdx ? "active" : ""}">
+          (team) => {
+            const content = `
               <div class="team-name">${esc(team.name)}</div>
               <div class="team-score">${team.score}</div>
               ${
@@ -120,8 +121,18 @@ function scoreRow(state) {
                   ? `<div class="team-turns">Lượt còn: <strong>${state.turnsRemainingByTeam?.[team.id] ?? state.roundsPerTeam ?? 0}</strong></div>`
                   : ""
               }
-            </div>
-          `,
+            `;
+
+            if (IS_DISPLAY_MODE) {
+              return `<div class="team-card ${team.id === activeIdx ? "active" : ""}">${content}</div>`;
+            }
+
+            return `
+              <button class="team-card control-team-card ${team.id === activeIdx ? "active" : ""}" data-action="select-team" data-team="${team.id}">
+                ${content}
+              </button>
+            `;
+          },
         )
         .join("")}
     </div>
@@ -172,18 +183,15 @@ function captureMediaSnapshot() {
 }
 
 function stopBombVideoPlayback() {
-  app.querySelectorAll(".bomb-video").forEach((video) => {
-    try {
-      video.pause();
-      video.loop = false;
-      video.muted = true;
-      video.currentTime = 0;
-      video.removeAttribute("src");
-      video.load();
-    } catch {
-      // Ignore media shutdown issues during screen transitions.
-    }
-  });
+  try {
+    persistentBombVideo.pause();
+    persistentBombVideo.currentTime = 0;
+  } catch {
+    // Ignore media shutdown issues during screen transitions.
+  }
+  if (persistentBombShell.parentElement) {
+    persistentBombShell.parentElement.removeChild(persistentBombShell);
+  }
   mediaSnapshot.delete("bomb-video");
 }
 
@@ -202,20 +210,21 @@ function teardownOutgoingMedia(nextState) {
   if (!keepBombVideo) mediaSnapshot.delete("bomb-video");
 
   app.querySelectorAll("video").forEach((video) => {
+    const isPersistentBomb = video === persistentBombVideo;
     const isPersistentDiscussion = video === persistentDiscussionVideo;
     const shouldKeep = keepBombVideo && video.dataset.mediaKey === "bomb-video";
-    if (shouldKeep || (isPersistentDiscussion && keepDiscussionVideo)) return;
+    if (shouldKeep || (isPersistentBomb && keepBombVideo) || (isPersistentDiscussion && keepDiscussionVideo)) return;
 
     try {
       video.pause();
-      if (!isPersistentDiscussion || !keepDiscussionVideo) {
+      if ((!isPersistentDiscussion || !keepDiscussionVideo) && (!isPersistentBomb || !keepBombVideo)) {
         video.currentTime = 0;
       }
     } catch {
       // Ignore teardown errors from browser media internals.
     }
 
-    if (!isPersistentDiscussion) {
+    if (!isPersistentDiscussion && !isPersistentBomb) {
       try {
         video.loop = false;
         video.muted = true;
@@ -257,6 +266,25 @@ function restoreMediaSnapshot() {
 
 function shouldShowDiscussionVideo(state) {
   return state.isDiscussionPhase || discussionVideoPendingEnd;
+}
+
+function syncPersistentBombVideo(state) {
+  const host = app.querySelector("[data-support-host='bomb']");
+
+  if (IS_DISPLAY_MODE && isBombPresentation(state) && host) {
+    if (persistentBombShell.parentElement !== host) {
+      host.appendChild(persistentBombShell);
+      try {
+        persistentBombVideo.currentTime = 0;
+      } catch {
+        // Ignore seek errors before metadata is ready.
+      }
+      persistentBombVideo.play().catch(() => {});
+    }
+    return;
+  }
+
+  stopBombVideoPlayback();
 }
 
 function syncPersistentDiscussionVideo(state) {
@@ -314,105 +342,42 @@ function renderCardsGrid(state) {
   `;
 }
 
-function renderEffectSheet(state) {
-  if (!state.showEffectSheet) return "";
-  const activeIdx = activeTeamIndexOf(state);
+function renderManualControlPanel(state, card = null) {
+  if (IS_DISPLAY_MODE) return "";
+
+  const activeTeam = state.teams[activeTeamIndexOf(state)];
+  const isQuestionCard = card?.type === "QUESTION";
+  const supportsTimer =
+    isQuestionCard &&
+    [QuestionKind.MULTIPLE_CHOICE, QuestionKind.ESSAY].includes(card.kind);
+  const canRunQuestionActions = supportsTimer && !card.isRevealed;
+
   return `
-    <div class="modal-backdrop" data-action="close-sheet-bg">
-      <div class="sheet" data-stop-click="1">
-        <h3 class="sheet-title">THẺ CHỨC NĂNG</h3>
-        <div class="effect-grid">
-          ${state.teams
-            .map(
-              (team) => `
-                <div class="effect-team ${team.id === activeIdx ? "active" : ""}">
-                  <h4>${esc(team.name)}</h4>
-                  <div class="effect-cards">
-                    ${team.effectCards
-                      .map((effect) => {
-                        const meta = getEffectMeta(effect.type);
-                        const availability = getEffectAvailability(state, team.id, effect);
-                        return `
-                          <div
-                            class="effect-card ${effect.used ? "used" : ""} ${availability.usable ? "" : "disabled"}"
-                            ${availability.usable ? `data-action="effect" data-team="${team.id}" data-effect="${effect.id}"` : ""}
-                            title="${availability.usable ? `${meta.desc} - ${meta.timing}` : (availability.reason ?? "Khong kha dung")}"
-                          >
-                            <img src="./assets/effects/${meta.image}" alt="${meta.name}">
-                            <div class="effect-card-name">${meta.name}</div>
-                            <div class="effect-card-meta">${meta.timing}</div>
-                          </div>
-                        `;
-                      })
-                      .join("")}
-                  </div>
-                </div>
-              `,
-            )
-            .join("")}
-        </div>
+    <section class="panel manual-control-panel">
+      <div class="panel-heading">
+        <h3 class="section-title">BẢNG ĐIỀU KHIỂN</h3>
+        <div class="control-team-indicator">Đội đang chọn: <strong>${esc(activeTeam?.name ?? "")}</strong></div>
       </div>
-    </div>
-  `;
-}
-
-function renderFloatingControls() {
-  return `
-    <div class="floating-controls">
-      <button class="fab fab-team" data-action="shift-team" data-delta="-1">T-</button>
-      <button class="fab fab-team" data-action="shift-team" data-delta="1">T+</button>
-      <button class="fab fab-minus" data-action="add-score-active" data-delta="-5">-5</button>
-      <button class="fab fab-plus" data-action="add-score-active" data-delta="5">+5</button>
-    </div>
-  `;
-}
-
-function renderAvailableEffects(state) {
-  const activeIdx = activeTeamIndexOf(state);
-  const rows = state.teams
-    .map((team) => {
-      const unused = team.effectCards.filter((effect) => !effect.used);
-      if (unused.length === 0) return "";
-      return `
-        <div class="team-effect-card ${team.id === activeIdx ? "active" : ""}">
-          <div class="team-effect-name">${esc(team.name)}</div>
-          <div class="effects-flow">
-            ${unused
-              .map((effect) => {
-                const meta = getEffectMeta(effect.type);
-                const availability = getEffectAvailability(state, team.id, effect);
-                return `
-                  <button
-                    class="effect-pill ${availability.usable ? "" : "disabled"}"
-                    ${availability.usable ? "" : "disabled"}
-                    ${
-                      availability.usable
-                        ? `data-action="effect" data-team="${team.id}" data-effect="${effect.id}"`
-                        : `title="${availability.reason ?? "Không khả dụng"}"`
-                    }
-                  >
-                    <span>${esc(String(meta.name).toUpperCase())}</span>
-                    <small>${esc(meta.timing)}</small>
-                  </button>
-                `;
-              })
-              .join("")}
+      <div class="manual-control-grid">
+        <div class="manual-group">
+          <div class="manual-label">Điểm số</div>
+          <div class="manual-buttons">
+            <button class="control-btn control-btn-negative" data-action="adjust-score" data-delta="-5">-5</button>
+            <button class="control-btn" data-action="adjust-score" data-delta="10">+10</button>
+            <button class="control-btn" data-action="adjust-score" data-delta="20">+20</button>
           </div>
         </div>
-      `;
-    })
-    .filter(Boolean)
-    .join("");
-
-  if (!rows) return "";
-
-  return `
-    <section class="panel inline-effects">
-      <div class="panel-heading">
-        <h3 class="section-title">THẺ HIỆU ỨNG</h3>
-        <div class="inline-hint">Bản rút gọn</div>
+        <div class="manual-group">
+          <div class="manual-label">Câu hỏi</div>
+          <div class="manual-buttons">
+            <button class="control-btn" data-action="start-question-timer" ${canRunQuestionActions && !state.isTimerRunning && !state.isDiscussionPhase ? "" : "disabled"}>Begin Timer</button>
+            <button class="control-btn" data-action="reset-question-timer" ${supportsTimer && !card?.isRevealed ? "" : "disabled"}>Reset Timer</button>
+            <button class="control-btn" data-action="start-get-help" ${canRunQuestionActions ? "" : "disabled"}>Show Get Help</button>
+            <button class="control-btn control-btn-warn" data-action="timeout-question" ${canRunQuestionActions ? "" : "disabled"}>Timeout</button>
+            <button class="control-btn control-btn-accent" data-action="show-correct-answer" ${isQuestionCard && !card.isRevealed ? "" : "disabled"}>Show Correct Answer</button>
+          </div>
+        </div>
       </div>
-      <div class="team-effects-grid">${rows}</div>
     </section>
   `;
 }
@@ -431,7 +396,7 @@ function renderQuestionChoices(card, state) {
           let classes = "choice";
           if (!card.isRevealed && isSelected) classes += " selected";
           if (card.isRevealed && state.answerTimedOut && isCorrect && !isAnswered) classes += " timeout";
-          if (card.isRevealed && isCorrect && isAnswered) classes += " correct";
+          if (card.isRevealed && isCorrect && (isAnswered || state.isRevealingAnswer)) classes += " correct";
           if (card.isRevealed && isSelected && !isCorrect && isAnswered) classes += " wrong";
 
           return `
@@ -448,7 +413,7 @@ function renderQuestionChoices(card, state) {
                   card.isRevealed
                     ? state.answerTimedOut && isCorrect && !isAnswered
                       ? "⏱"
-                      : isCorrect && isAnswered
+                      : isCorrect && (isAnswered || state.isRevealingAnswer)
                         ? "✓"
                         : isSelected && !isCorrect && isAnswered
                           ? "✕"
@@ -474,7 +439,7 @@ function renderQuestionBody(card, state) {
   if (card.kind === QuestionKind.REAL_WORLD_CHALLENGE) title = "THỬ THÁCH";
 
   return `
-    <section class="panel question-stage ${state.isTimerRunning || card.isRevealed ? "" : "ready"}" data-action="start-timer">
+    <section class="panel question-stage ${state.isTimerRunning || card.isRevealed ? "" : "ready"}">
       <div class="question-shell">
         <h2 class="question-kind">${esc(titleIndex)}${title}</h2>
         <p class="question-text">${esc(card.text)}</p>
@@ -483,7 +448,7 @@ function renderQuestionBody(card, state) {
           !state.isTimerRunning &&
           !state.isDiscussionPhase &&
           [QuestionKind.MULTIPLE_CHOICE, QuestionKind.ESSAY].includes(card.kind)
-            ? `<div class="start-hint">Bắt đầu đếm giờ</div>`
+            ? `<div class="start-hint">${IS_DISPLAY_MODE ? "Chờ quản trò bắt đầu đếm giờ" : "Dùng bảng điều khiển để bắt đầu đếm giờ"}</div>`
             : ""
         }
         ${renderQuestionChoices(card, state)}
@@ -503,7 +468,6 @@ function renderQuestionBody(card, state) {
 }
 
 function renderSupportFeedPanel(state) {
-  if (!IS_DISPLAY_MODE) return "";
   if (!shouldShowDiscussionVideo(state)) return "";
 
   return `
@@ -552,7 +516,7 @@ function renderQuestionScreen(state, card) {
         </div>
         <div class="question-sidebar">
           ${renderSupportFeedPanel(state)}
-          ${!IS_DISPLAY_MODE && card.type === "QUESTION" ? renderAvailableEffects(state) : ""}
+          ${renderManualControlPanel(state, card)}
           <section class="panel score-panel compact-score-panel">
             <div class="panel-heading">
               <h3 class="section-title">BẢNG XẾP HẠNG</h3>
@@ -562,7 +526,6 @@ function renderQuestionScreen(state, card) {
           </section>
         </div>
       </div>
-      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
     </div>
   `;
 }
@@ -583,7 +546,7 @@ function renderBombScreen(state) {
       <section class="panel bomb-wrap">
         ${
           IS_DISPLAY_MODE
-            ? `<video class="bomb-video" data-media-key="bomb-video" src="./assets/media/explosion.mp4" autoplay playsinline></video>`
+            ? `<div class="bomb-video-host" data-support-host="bomb"></div>`
             : `<div class="bomb-control-card"><div class="bomb-control-icon">💣</div><div class="bomb-control-copy">Bomb da mo</div></div>`
         }
       </section>
@@ -594,7 +557,7 @@ function renderBombScreen(state) {
         </div>
         ${scoreRow(state)}
       </section>
-      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
+      ${renderManualControlPanel(state, null)}
     </div>
   `;
 }
@@ -614,9 +577,7 @@ function renderGameScreen(state) {
         <h1 class="board-title">CARD BOARD</h1>
         <section class="panel board">${renderCardsGrid(state)}</section>
       </section>
-      ${!IS_DISPLAY_MODE ? `<button class="cta" data-action="open-effect-sheet">CÁC THẺ CHỨC NĂNG CỦA TỪNG ĐỘI CÒN LẠI</button>` : ""}
-      ${!IS_DISPLAY_MODE ? renderEffectSheet(state) : ""}
-      ${!IS_DISPLAY_MODE ? renderFloatingControls() : ""}
+      ${renderManualControlPanel(state, null)}
     </div>
   `;
 }
@@ -684,7 +645,7 @@ function rulePowerupPage() {
   return `
     <div class="rules-card panel">
       <h2 class="title">2. Hệ thống Lá bài Chức năng</h2>
-      <p>Mỗi đội nhận 3 thẻ ngẫu nhiên. Sử dụng 1 lần duy nhất.</p>
+      <p>Mỗi đội nhận 3 thẻ ngẫu nhiên. Các lá bài vẫn được giới thiệu trên màn hình để người chơi nắm luật.</p>
       <div class="rule-grid cols-4">
         ${Object.values(EFFECT_META)
           .map(
@@ -712,7 +673,14 @@ function ruleSummaryPage() {
         <div class="tile">💪 8 đội chơi</div>
         <div class="tile">🎲 48 ô bí ẩn</div>
         <div class="tile">🧠 40 câu hỏi và thử thách</div>
-        <div class="tile">✨ 8 loại thẻ chức năng</div>
+        <div class="tile">🎛 Quản trò điều khiển trực tiếp</div>
+      </div>
+      <p class="rules-subtitle">Quản trò thao tác tay:</p>
+      <div class="rule-grid cols-4">
+        <div class="tile">▶ Begin Timer: bắt đầu đếm giờ</div>
+        <div class="tile">🔁 Reset Timer: đưa đồng hồ về mốc ban đầu</div>
+        <div class="tile">🆘 Show Get Help: phát video trợ giúp</div>
+        <div class="tile">✅ Show Correct Answer: hiện đáp án đúng</div>
       </div>
       <p class="summary-copy">Các đội hãy chơi một cách công bằng và vui vẻ nhé!</p>
     </div>
@@ -772,13 +740,14 @@ function render(state) {
   teardownOutgoingMedia(state);
   app.innerHTML = html;
   restoreMediaSnapshot();
+  syncPersistentBombVideo(state);
   syncPersistentDiscussionVideo(state);
 }
 
 function handleAction(target) {
   if (IS_DISPLAY_MODE || !vm) return;
 
-  const actionNode = target.closest("[data-action]");
+  const actionNode = resolveActionNode(target);
   if (!actionNode) return;
 
   const action = actionNode.dataset.action;
@@ -790,33 +759,16 @@ function handleAction(target) {
     return;
   }
 
-  if (action === "open-effect-sheet") {
-    sfx?.playByName("sfx_open_sheet");
-    vm.setShowEffectSheet(true);
+  if (action === "select-team") {
+    vm.selectActiveTeam(Number(actionNode.dataset.team));
     return;
   }
 
-  if (action === "close-sheet-bg") {
-    if (target.closest("[data-stop-click='1']")) return;
-    vm.setShowEffectSheet(false);
-    return;
-  }
-
-  if (action === "effect") {
-    sfx?.playByName("sfx_open_sheet");
-    vm.useEffectCard(Number(actionNode.dataset.team), actionNode.dataset.effect);
-    return;
-  }
-
-  if (action === "shift-team") {
-    vm.shiftActiveTeam(Number(actionNode.dataset.delta));
-    return;
-  }
-
-  if (action === "add-score-active") {
+  if (action === "adjust-score") {
     const delta = Number(actionNode.dataset.delta);
     const teamId = activeTeamIndexOf(state);
     vm.addPointsManually(delta, teamId);
+    sfx?.playByName(delta > 0 ? "sfx_score_up" : "sfx_score_down");
     return;
   }
 
@@ -832,8 +784,28 @@ function handleAction(target) {
     return;
   }
 
-  if (action === "start-timer") {
+  if (action === "start-question-timer") {
     vm.startTimerManually();
+    return;
+  }
+
+  if (action === "reset-question-timer") {
+    vm.resetTimer();
+    return;
+  }
+
+  if (action === "start-get-help") {
+    vm.startGetHelpTimer();
+    return;
+  }
+
+  if (action === "timeout-question") {
+    vm.forceTimeout();
+    return;
+  }
+
+  if (action === "show-correct-answer") {
+    vm.revealCorrectAnswer();
     return;
   }
 
@@ -880,7 +852,7 @@ function handleAction(target) {
 
 if (!IS_DISPLAY_MODE) {
   app.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     handleAction(event.target);
   });
 }
