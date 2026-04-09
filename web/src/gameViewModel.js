@@ -146,7 +146,7 @@ export class GameViewModel {
     });
 
     const teams = [];
-    const teamNames = ["Cựu", "Don Bosco", "Đaminh Savio", "Gioan Tông đồ", "Mẹ Vô Nhiễm", "Phaolo Trở Lại", "Phanxico Assisi","Anton Padua"]
+    const teamNames = ["Giuse", "Don Bosco", "Đaminh Savio", "Gioan Tông đồ", "Mẹ Vô Nhiễm", "Phaolo Trở Lại", "Phanxico Assisi","Anton Padua"]
     for (let i = 1; i <= 8; i += 1) {
       const hand = [];
       for (let h = 0; h < 3; h += 1) {
