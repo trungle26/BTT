@@ -69,6 +69,12 @@ textarea {
   font-weight: 800;
 }
 
+.end-game-btn {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .game-theme {
   background:
     linear-gradient(rgba(4, 2, 9, 0.3), rgba(4, 2, 9, 0.56)),

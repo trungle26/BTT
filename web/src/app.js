@@ -141,6 +141,7 @@ function renderModeToolbar() {
     <div class="mode-toolbar">
       <div class="mode-badge">CONTROL</div>
       <button class="ghost open-display-btn" data-action="open-display-tab">Open Display Tab</button>
+      <button class="start-btn end-game-btn" data-action="end-game">End Game</button>
     </div>
   `;
 }
@@ -867,6 +868,11 @@ function handleAction(target) {
 
   if (action === "open-display-tab") {
     window.open(`${window.location.pathname}?mode=display`, "_blank", "noopener");
+    return;
+  }
+
+  if (action === "end-game") {
+    vm.endGame();
   }
 }
 

@@ -439,8 +439,7 @@ export class GameViewModel {
       if (nextActiveTeamIndex == null) {
         return {
           ...state,
-          gameOver: true,
-          showingStandings: true,
+          activeTeamIndex: state.activeTeamIndex,
         };
       }
 
@@ -639,8 +638,7 @@ export class GameViewModel {
         } else {
           const nextActiveTeamIndex = findNextEligibleTeamIndex(turnsRemainingByTeam, turnOwnerTeamIndex);
           if (nextActiveTeamIndex == null) {
-            gameOver = true;
-            showingStandings = true;
+            activeTeamIndex = turnOwnerTeamIndex;
           } else {
             activeTeamIndex = nextActiveTeamIndex;
           }
@@ -686,6 +684,26 @@ export class GameViewModel {
 
   closeRulesScreen() {
     this.setState((state) => ({ ...state, showingRules: false }));
+  }
+
+  endGame() {
+    this.cancelTimer();
+    this.setState((state) => ({
+      ...state,
+      gameOver: true,
+      showingStandings: true,
+      showingPresentationScreen: false,
+      selectedCardIndex: null,
+      turnOwnerTeamIndex: null,
+      selectedChoiceIndex: null,
+      answerTimedOut: false,
+      stolenTurnTeamIndex: null,
+      timerMs: null,
+      isRevealingAnswer: false,
+      isDiscussionPhase: false,
+      isTimerRunning: false,
+      showEffectSheet: false,
+    }));
   }
 
   setShowEffectSheet(show) {
