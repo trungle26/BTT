@@ -35,7 +35,7 @@ export const EFFECT_META = {
     image: "tan_cong.jpg",
     desc: "Chỉ định ô bắt buộc cho đội bạn mở",
     timing: "Khi đến lượt của đội bị chỉ định",
-    usability: "Theo luật, đội bị chỉ định phải mở ô đã bị ép khi đến lượt. Ban web hiện tại chưa hỗ trợ thẻ này.",
+    usability: "Theo luật, đội bị chỉ định phải mở ô đã bị ép khi đến lượt.",
   },
   [EffectType.STEAL]: {
     name: "Giành Quyền Trả Lời",
