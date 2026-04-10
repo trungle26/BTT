@@ -39,11 +39,19 @@ function findNextEligibleTeamIndex(turnsRemainingByTeam, currentIndex) {
   return null;
 }
 
+function currentTimestampMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
 export class GameViewModel {
   constructor(options = {}) {
     this.initialCards = options.initialCards ?? null;
     this.listeners = new Set();
     this.timerInterval = null;
+    this.timerLastTickAt = 0;
     this.remainingTimeMs = 20_999;
     this.roundsPerTeam = 5;
     this.state = this.createInitialState();
@@ -275,6 +283,7 @@ export class GameViewModel {
   startQuestionTimer() {
     this.cancelCurrentTimer();
     this.remainingTimeMs = 20_999;
+    this.timerLastTickAt = currentTimestampMs();
     this.setState((state) => ({
       ...state,
       timerMs: 20_999,
@@ -283,13 +292,17 @@ export class GameViewModel {
     }));
 
     this.timerInterval = setInterval(() => {
+      const now = currentTimestampMs();
+      const elapsed = Math.max(0, now - this.timerLastTickAt);
+      this.timerLastTickAt = now;
+      this.remainingTimeMs = Math.max(0, this.remainingTimeMs - elapsed);
+
       if (this.remainingTimeMs > 0) {
         this.setState((state) => ({
           ...state,
-          timerMs: this.remainingTimeMs,
+          timerMs: Math.ceil(this.remainingTimeMs),
           isTimerRunning: true,
         }));
-        this.remainingTimeMs -= 200;
         return;
       }
 
@@ -317,6 +330,7 @@ export class GameViewModel {
   startGetHelpTimer() {
     this.cancelCurrentTimer();
     this.remainingTimeMs = 30_999;
+    this.timerLastTickAt = currentTimestampMs();
     let inDiscussionPhase = true;
 
     this.setState((state) => ({
@@ -328,26 +342,35 @@ export class GameViewModel {
     }));
 
     this.timerInterval = setInterval(() => {
-      if (this.remainingTimeMs > 0) {
-        this.setState((state) => ({
-          ...state,
-          timerMs: this.remainingTimeMs,
-          supportVideoForcedClosed: false,
-          isDiscussionPhase: inDiscussionPhase,
-          isTimerRunning: true,
-        }));
-        this.remainingTimeMs -= 200;
-        return;
+      const now = currentTimestampMs();
+      let elapsed = Math.max(0, now - this.timerLastTickAt);
+      this.timerLastTickAt = now;
+
+      while (elapsed > 0) {
+        if (elapsed < this.remainingTimeMs) {
+          this.remainingTimeMs -= elapsed;
+          elapsed = 0;
+          continue;
+        }
+
+        elapsed -= this.remainingTimeMs;
+
+        if (inDiscussionPhase) {
+          inDiscussionPhase = false;
+          this.remainingTimeMs = 20_999;
+          continue;
+        }
+
+        this.remainingTimeMs = 0;
+        break;
       }
 
-      if (inDiscussionPhase) {
-        inDiscussionPhase = false;
-        this.remainingTimeMs = 20_999;
+      if (inDiscussionPhase || this.remainingTimeMs > 0) {
         this.setState((state) => ({
           ...state,
-          timerMs: this.remainingTimeMs,
+          timerMs: Math.ceil(this.remainingTimeMs),
           supportVideoForcedClosed: false,
-          isDiscussionPhase: false,
+          isDiscussionPhase: inDiscussionPhase,
           isTimerRunning: true,
         }));
         return;
@@ -370,6 +393,7 @@ export class GameViewModel {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
     }
+    this.timerLastTickAt = 0;
   }
 
   resetTimer() {

@@ -9,11 +9,19 @@ from pathlib import Path
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
+class BttRequestHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+
 def build_handler():
     # Force module-friendly MIME types on Windows where .js can resolve to text/plain.
     mimetypes.add_type("text/javascript", ".js")
     mimetypes.add_type("text/css", ".css")
-    return functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(WEB_DIR))
+    return functools.partial(BttRequestHandler, directory=str(WEB_DIR))
 
 
 def main():

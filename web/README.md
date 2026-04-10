@@ -28,10 +28,10 @@ Why this script matters:
 
 The web app loads board data from:
 
-- `web/data/questions.xlsx` if present
-- otherwise `web/data/questions.csv`
+- `web/data/questions.csv` first
+- `web/data/questions.xlsx` only if CSV is missing and SheetJS/XLSX support is available
 
-You can edit `questions.csv` directly in Excel, or save an `.xlsx` file with the same columns.
+You can edit `questions.csv` directly in Excel. CSV is the default and recommended format.
 
 Required columns:
 
@@ -57,3 +57,4 @@ Notes:
 - The board order follows the row order exactly. There is no question randomization when spreadsheet data is used.
 - The file must contain exactly `48` rows total for the board.
 - For `correctChoiceIndex`, you can use `A-D`, `1-4`, or `0-3`.
+- If the CSV is invalid, the app falls back to sample cards and logs the reason in the browser console.

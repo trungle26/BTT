@@ -47,11 +47,14 @@ persistentDiscussionShell.innerHTML = `
     data-persistent-media="discussion-video"
     src="./assets/media/get_help.mp4"
     autoplay
+    muted
     playsinline
     preload="auto"
   ></video>
 `;
 const persistentDiscussionVideo = persistentDiscussionShell.querySelector("video");
+persistentDiscussionVideo.defaultMuted = true;
+persistentDiscussionVideo.muted = true;
 persistentDiscussionVideo.addEventListener("ended", () => {
   discussionVideoPendingEnd = false;
   if (currentState) {
@@ -97,6 +100,22 @@ function esc(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function renderChallengeImage(card) {
+  if (card.kind !== QuestionKind.REAL_WORLD_CHALLENGE) return "";
+
+  return `
+    <figure class="challenge-image-frame">
+      <img
+        class="challenge-image"
+        src="./assets/media/${encodeURIComponent(card.id)}.png"
+        alt="Challenge image ${esc(card.id)}"
+        loading="eager"
+        onerror="this.closest('.challenge-image-frame')?.remove()"
+      >
+    </figure>
+  `;
 }
 
 function activeTeamIndexOf(state) {
@@ -373,7 +392,11 @@ function attemptVideoPlayback(video) {
   if (!video) return;
 
   const startPlayback = () => {
-    video.play().catch(() => {});
+    video.play().catch(() => {
+      video.defaultMuted = true;
+      video.muted = true;
+      video.play().catch(() => {});
+    });
   };
 
   if (video.readyState >= 2) startPlayback();
@@ -443,7 +466,6 @@ function ensurePresentationMediaRetryLoop() {
 
   presentationMediaRetryTimer = window.setInterval(() => {
     if (!currentState) return;
-    if (document.hidden) return;
 
     const shouldRetryDiscussion =
       shouldShowDiscussionVideo(currentState) &&
@@ -594,9 +616,7 @@ function renderQuestionBody(card, state) {
       <div class="question-shell">
         <h2 class="question-kind">${esc(titleIndex)}${title}</h2>
         <p class="question-text">${esc(card.text)}</p>
-        ${
-          ""
-        }
+        ${renderChallengeImage(card)}
         ${renderQuestionChoices(card, state)}
         ${
           card.kind === QuestionKind.ESSAY && card.isRevealed && state.isRevealingAnswer

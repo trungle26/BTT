@@ -1,9 +1,82 @@
 import { createBombCard, createQuestionCard, QuestionKind } from "./models.js";
 
 const DATA_SOURCES = [
-  { path: "./data/questions.xlsx", kind: "xlsx" },
   { path: "./data/questions.csv", kind: "csv" },
+  { path: "./data/questions.xlsx", kind: "xlsx" },
 ];
+
+function removeBom(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const nextChar = text[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        index += 1;
+      }
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+
+    cell += char;
+  }
+
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function parseCsvRows(text) {
+  const rows = parseCsv(removeBom(text));
+  if (rows.length === 0) return [];
+
+  let headerRowIndex = 0;
+  const firstRow = rows[0].map((value) => String(value).trim());
+  const looksLikeExcelPlaceholderHeader =
+    firstRow.length > 0 && firstRow.every((value) => /^column\d+$/i.test(value));
+  if (looksLikeExcelPlaceholderHeader && rows.length > 1) {
+    headerRowIndex = 1;
+  }
+
+  const headers = rows[headerRowIndex].map((value) => String(value).trim());
+  return rows
+    .slice(headerRowIndex + 1)
+    .filter((values) => values.some((value) => String(value ?? "").trim() !== ""))
+    .map((values) =>
+      Object.fromEntries(headers.map((header, index) => [header, String(values[index] ?? "").trim()])),
+    );
+}
 
 function normalizeRow(row) {
   return Object.fromEntries(
@@ -76,21 +149,21 @@ function parseRows(rows) {
 }
 
 async function fetchSpreadsheetRows() {
-  if (!window.XLSX) return null;
-
   for (const source of DATA_SOURCES) {
     const response = await fetch(source.path, { cache: "no-store" }).catch(() => null);
     if (!response || !response.ok) continue;
 
-    let workbook;
-    if (source.kind === "xlsx") {
-      const buffer = await response.arrayBuffer();
-      workbook = window.XLSX.read(buffer, { type: "array" });
-    } else {
+    if (source.kind === "csv") {
       const text = await response.text();
-      workbook = window.XLSX.read(text, { type: "string" });
+      return parseRows(parseCsvRows(text));
     }
 
+    if (!window.XLSX) {
+      throw new Error(`Cannot read ${source.path} because the XLSX parser is not available.`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const workbook = window.XLSX.read(buffer, { type: "array" });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) continue;
     const sheet = workbook.Sheets[firstSheetName];
@@ -111,7 +184,7 @@ export async function loadConfiguredCards(seed = null) {
     const loadedCards = await fetchSpreadsheetRows();
     if (loadedCards) return loadedCards;
   } catch (error) {
-    console.error("Failed to load spreadsheet data, falling back to sample cards.", error);
+    console.error("Failed to load question data, falling back to sample cards.", error);
   }
 
   return generateFallbackCards(seed);
