@@ -360,7 +360,7 @@ class GameViewModel : ViewModel() {
     private fun startGetHelpTimer() {
         SfxPlayer.stopTimeoutTicking()
         timerJob?.cancel()
-        remainingTimeMs = 31_500L
+        remainingTimeMs = 30_999L
         _state.update { it.copy(isDiscussionPhase = true) }
 
         timerJob = viewModelScope.launch {

@@ -12,12 +12,17 @@ Standalone web rewrite of the Android MVVM game, preserving the same game-state 
 From project root:
 
 ```bash
-python3 -m http.server 8080 -d web
+python serve_web.py
 ```
 
 Then open:
 
 `http://localhost:8080`
+
+Why this script matters:
+
+- On some Windows Python setups, `python -m http.server` serves `.js` files as `text/plain`.
+- This app uses ES modules, so the browser will refuse to execute `web/src/app.js` unless it is served as JavaScript.
 
 ## Spreadsheet Data
 

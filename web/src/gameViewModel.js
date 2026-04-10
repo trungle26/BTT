@@ -316,7 +316,7 @@ export class GameViewModel {
 
   startGetHelpTimer() {
     this.cancelCurrentTimer();
-    this.remainingTimeMs = 32_000;
+    this.remainingTimeMs = 30_999;
     let inDiscussionPhase = true;
 
     this.setState((state) => ({

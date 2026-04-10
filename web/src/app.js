@@ -9,16 +9,21 @@ const APP_MODE = urlParams.get("mode") === "display" ? "display" : "control";
 const IS_DISPLAY_MODE = APP_MODE === "display";
 const STATE_STORAGE_KEY = "btt:web:shared-state";
 const STATE_CHANNEL_NAME = "btt:web:sync";
+const PREVIEW_MESSAGE_TYPE = "preview_card";
 const preloadedCards = IS_DISPLAY_MODE ? null : await loadConfiguredCards();
 const vm = IS_DISPLAY_MODE ? null : new GameViewModel({ initialCards: preloadedCards });
 const sfx = IS_DISPLAY_MODE ? new SfxPlayer() : null;
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(STATE_CHANNEL_NAME) : null;
+app.dataset.mode = APP_MODE;
 let mediaSnapshot = new Map();
 let previousState = null;
 let discussionVideoPendingEnd = false;
 let currentState = loadSharedState();
 let lastActionNode = null;
 let lastActionAt = 0;
+let displayTransitionCardIndex = null;
+let previewedCardIndex = null;
+let lastPublishedPreviewCardIndex = null;
 const persistentBombShell = document.createElement("div");
 persistentBombShell.className = "bomb-video-shell";
 persistentBombShell.innerHTML = `
@@ -81,12 +86,7 @@ function publishState(state) {
 
 function applyIncomingState(state) {
   if (!state) return;
-  currentState = state;
-  render(state);
-  previousState = {
-    ...state,
-    teams: state.teams.map((team) => ({ ...team })),
-  };
+  renderIncomingDisplayState(state);
 }
 
 function esc(text) {
@@ -116,6 +116,98 @@ function shouldSkipDuplicateAction(actionNode) {
   lastActionNode = actionNode;
   lastActionAt = now;
   return false;
+}
+
+function publishPreviewCardIndex(index) {
+  if (IS_DISPLAY_MODE || lastPublishedPreviewCardIndex === index) return;
+  lastPublishedPreviewCardIndex = index;
+  syncChannel?.postMessage({
+    type: PREVIEW_MESSAGE_TYPE,
+    payload: index,
+  });
+}
+
+function rememberPreviousState(state) {
+  previousState = state
+    ? {
+        ...state,
+        teams: state.teams.map((team) => ({ ...team })),
+      }
+    : null;
+}
+
+function shouldAnimateDisplayCardOpen(nextState) {
+  return (
+    IS_DISPLAY_MODE &&
+    typeof document.startViewTransition === "function" &&
+    previousState != null &&
+    !previousState.showingPresentationScreen &&
+    nextState.showingPresentationScreen &&
+    nextState.selectedCardIndex != null
+  );
+}
+
+function renderIncomingDisplayState(state) {
+  currentState = state;
+
+  if (!shouldAnimateDisplayCardOpen(state)) {
+    render(state);
+    rememberPreviousState(state);
+    return;
+  }
+
+  const cardIndex = state.selectedCardIndex;
+  const sourceCard = app.querySelector(`[data-action="open-card"][data-index="${cardIndex}"]`);
+  if (!sourceCard) {
+    render(state);
+    rememberPreviousState(state);
+    return;
+  }
+
+  sourceCard.style.viewTransitionName = "opened-card";
+  displayTransitionCardIndex = cardIndex;
+
+  const transition = document.startViewTransition(() => {
+    render(state);
+  });
+
+  transition.finished.finally(() => {
+    sourceCard.style.viewTransitionName = "";
+    displayTransitionCardIndex = null;
+    if (currentState) render(currentState);
+  });
+
+  rememberPreviousState(state);
+}
+
+function renderOpenedCardTargetAttr(state) {
+  return IS_DISPLAY_MODE &&
+    displayTransitionCardIndex != null &&
+    state.selectedCardIndex === displayTransitionCardIndex
+    ? 'style="view-transition-name: opened-card;"'
+    : "";
+}
+
+function syncPreviewCardHighlight(state = currentState) {
+  const cards = app.querySelectorAll('.game-card[data-index]');
+  if (cards.length === 0) return;
+
+  const canPreview =
+    IS_DISPLAY_MODE &&
+    state &&
+    !state.showingRules &&
+    !state.showingStandings &&
+    !state.showingPresentationScreen;
+
+  cards.forEach((card) => {
+    const cardIndex = Number(card.dataset.index);
+    const isPreviewed =
+      canPreview &&
+      Number.isInteger(cardIndex) &&
+      cardIndex === previewedCardIndex &&
+      card.classList.contains("hidden");
+    card.classList.toggle("previewed", isPreviewed);
+  });
 }
 
 function scoreRow(state) {
@@ -526,7 +618,10 @@ function renderQuestionScreen(state, card) {
         <div class="top-spacer"></div>
       </div>
       <div class="question-layout">
-        <div class="question-primary question-primary-wide">
+        <div
+          class="question-primary question-primary-wide question-primary-shell"
+          ${renderOpenedCardTargetAttr(state)}
+        >
           ${renderQuestionBody(card, state)}
         </div>
         <div class="question-sidebar">
@@ -558,7 +653,10 @@ function renderBombScreen(state) {
         <div class="timer-wrap"></div>
         <div class="top-spacer"></div>
       </div>
-      <section class="panel bomb-wrap">
+      <section
+        class="panel bomb-wrap"
+        ${renderOpenedCardTargetAttr(state)}
+      >
         ${
           IS_DISPLAY_MODE
             ? `<div class="bomb-video-host" data-support-host="bomb"></div>`
@@ -750,6 +848,7 @@ function render(state) {
   restoreMediaSnapshot();
   syncPersistentBombVideo(state);
   syncPersistentDiscussionVideo(state);
+  syncPreviewCardHighlight(state);
 }
 
 function handleAction(target) {
@@ -764,6 +863,7 @@ function handleAction(target) {
 
   if (action === "open-card") {
     sfx?.playByName("sfx_card_flip");
+    publishPreviewCardIndex(null);
     vm.onCardClicked(Number(actionNode.dataset.index));
     return;
   }
@@ -873,6 +973,18 @@ if (!IS_DISPLAY_MODE) {
   app.addEventListener("click", (event) => {
     handleAction(event.target);
   });
+  app.addEventListener("pointerover", (event) => {
+    if (event.pointerType !== "mouse" || !vm) return;
+    if (vm.state.showingRules || vm.state.showingStandings || vm.state.showingPresentationScreen) {
+      publishPreviewCardIndex(null);
+      return;
+    }
+    const cardNode = event.target instanceof Element ? event.target.closest('[data-action="open-card"]') : null;
+    publishPreviewCardIndex(cardNode ? Number(cardNode.dataset.index) : null);
+  });
+  app.addEventListener("pointerleave", () => {
+    publishPreviewCardIndex(null);
+  });
 }
 
 function syncAudioForState(state) {
@@ -899,6 +1011,12 @@ syncChannel?.addEventListener("message", (event) => {
     return;
   }
 
+  if (message.type === PREVIEW_MESSAGE_TYPE && IS_DISPLAY_MODE) {
+    previewedCardIndex = Number.isInteger(message.payload) ? message.payload : null;
+    syncPreviewCardHighlight();
+    return;
+  }
+
   if (message.type === "state_snapshot" && IS_DISPLAY_MODE) {
     syncAudioForState(message.payload);
     applyIncomingState(message.payload);
@@ -920,10 +1038,7 @@ if (IS_DISPLAY_MODE) {
   if (currentState) {
     syncAudioForState(currentState);
     render(currentState);
-    previousState = {
-      ...currentState,
-      teams: currentState.teams.map((team) => ({ ...team })),
-    };
+    rememberPreviousState(currentState);
   } else {
     render(null);
   }
@@ -933,9 +1048,6 @@ if (IS_DISPLAY_MODE) {
     currentState = state;
     render(state);
     publishState(state);
-    previousState = {
-      ...state,
-      teams: state.teams.map((team) => ({ ...team })),
-    };
+    rememberPreviousState(state);
   });
 }

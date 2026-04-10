@@ -3,6 +3,7 @@
   --surface: rgba(13, 10, 29, 0.82);
   --surface-soft: rgba(17, 11, 34, 0.74);
   --line: rgba(255, 255, 255, 0.12);
+  --panel-edge: rgba(0, 245, 255, 0.18);
   --text: #fff7dd;
   --muted: rgba(255, 255, 255, 0.74);
   --cyan: #00f5ff;
@@ -10,6 +11,8 @@
   --lime: #b2ff59;
   --red: #ff1744;
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  --glow-cyan: 0 0 32px rgba(0, 245, 255, 0.2);
+  --glow-pink: 0 0 38px rgba(255, 0, 229, 0.14);
 }
 
 * {
@@ -29,6 +32,35 @@ body {
     radial-gradient(circle at top left, rgba(255, 0, 229, 0.14), transparent 30%),
     radial-gradient(circle at bottom right, rgba(0, 245, 255, 0.16), transparent 30%),
     var(--bg-deep);
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: -12%;
+  pointer-events: none;
+}
+
+body::before {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(0, 245, 255, 0.12), transparent 22%),
+    radial-gradient(circle at 80% 18%, rgba(255, 234, 0, 0.1), transparent 18%),
+    radial-gradient(circle at 72% 76%, rgba(255, 0, 229, 0.12), transparent 20%);
+  filter: blur(10px);
+  animation: auroraDrift 20s ease-in-out infinite alternate;
+  opacity: 0.9;
+}
+
+body::after {
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 120px 120px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.6), transparent 92%);
+  opacity: 0.35;
 }
 
 button,
@@ -39,6 +71,8 @@ textarea {
 
 #app {
   min-height: 100vh;
+  position: relative;
+  isolation: isolate;
 }
 
 .mode-toolbar {
@@ -49,6 +83,12 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(6, 8, 18, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(14px);
 }
 
 .mode-badge {
@@ -84,6 +124,8 @@ textarea {
 .screen,
 .rules {
   min-height: 100vh;
+  position: relative;
+  isolation: isolate;
 }
 
 .screen {
@@ -91,6 +133,34 @@ textarea {
   flex-direction: column;
   gap: 8px;
   padding: 8px;
+}
+
+.game-theme::before,
+.game-theme::after,
+.rules::before,
+.rules::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.game-theme::before,
+.rules::before {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(0, 245, 255, 0.18), transparent 20%),
+    radial-gradient(circle at 84% 18%, rgba(255, 234, 0, 0.15), transparent 18%),
+    radial-gradient(circle at 78% 82%, rgba(255, 23, 68, 0.16), transparent 24%);
+  opacity: 0.72;
+}
+
+.game-theme::after,
+.rules::after {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 12%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent 32%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
 }
 
 .board-screen,
@@ -116,11 +186,24 @@ textarea {
 
 .panel {
   min-width: 0;
-  background: linear-gradient(180deg, rgba(16, 12, 31, 0.9), rgba(10, 7, 21, 0.88));
-  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(22, 18, 40, 0.94), rgba(8, 8, 21, 0.92)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 48%);
+  border: 1px solid var(--panel-edge);
   border-radius: 18px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--glow-cyan);
   backdrop-filter: blur(8px);
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.08), transparent 28%, transparent 72%, rgba(0, 245, 255, 0.08));
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .title,
@@ -168,11 +251,16 @@ textarea {
 
 .team-card {
   width: 100%;
+  position: relative;
+  overflow: hidden;
   padding: 7px 6px;
   border-radius: 12px;
-  background: rgba(17, 10, 34, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(18, 10, 39, 0.94), rgba(10, 13, 28, 0.9)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 52%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   text-align: center;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .control-team-card {
@@ -181,8 +269,14 @@ textarea {
 
 .team-card.active {
   border-color: rgba(0, 245, 255, 0.8);
-  box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.28);
-  background: rgba(224, 64, 251, 0.16);
+  box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.28), 0 0 22px rgba(0, 245, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(43, 18, 68, 0.96), rgba(16, 19, 38, 0.92)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 52%);
+}
+
+#app[data-mode="display"] .team-card.active {
+  animation: activeTeamPulse 1.8s ease-in-out infinite;
 }
 
 .team-name {
@@ -223,6 +317,7 @@ textarea {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .manual-label {
@@ -252,11 +347,17 @@ textarea {
   font-weight: 800;
   cursor: pointer;
   touch-action: manipulation;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
 
 .control-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.control-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 245, 255, 0.12);
 }
 
 .control-btn-negative {
@@ -322,9 +423,22 @@ textarea {
 
 .board {
   min-height: 0;
+  position: relative;
   padding: 8px;
   overflow: hidden;
   height: 100%;
+  background:
+    linear-gradient(180deg, rgba(9, 13, 26, 0.84), rgba(8, 8, 19, 0.92)),
+    radial-gradient(circle at top, rgba(0, 245, 255, 0.07), transparent 34%);
+}
+
+.board::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  pointer-events: none;
 }
 
 .grid {
@@ -333,16 +447,19 @@ textarea {
   grid-template-columns: repeat(8, minmax(0, 1fr));
   grid-template-rows: repeat(6, minmax(0, 1fr));
   gap: clamp(4px, 0.5vw, 8px);
+  perspective: 1800px;
 }
 
 .game-card {
   height: 100%;
   min-height: 0;
   aspect-ratio: auto;
+  position: relative;
+  overflow: hidden;
   border-radius: 12px;
   border: 2px solid transparent;
   background:
-    linear-gradient(180deg, rgba(13, 27, 42, 0.96), rgba(27, 73, 101, 0.94)) padding-box,
+    linear-gradient(180deg, rgba(13, 27, 42, 0.98), rgba(27, 73, 101, 0.92)) padding-box,
     linear-gradient(135deg, #00e5ff, #0077b6) border-box;
   color: var(--cyan);
   display: flex;
@@ -352,8 +469,66 @@ textarea {
   font-size: clamp(12px, 1.1vw, 20px);
   font-weight: 900;
   text-shadow: 0 0 14px currentColor;
-  cursor: pointer;
   box-shadow: 0 8px 20px rgba(0, 245, 255, 0.14);
+  transform: translateY(0) rotateX(0) scale(1);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+#app[data-mode="control"] .game-card {
+  cursor: pointer;
+}
+
+#app[data-mode="display"] .game-card {
+  cursor: default;
+}
+
+.game-card::before,
+.game-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.game-card::before {
+  inset: -30%;
+  background: linear-gradient(120deg, transparent 28%, rgba(255, 255, 255, 0.24) 46%, transparent 62%);
+  transform: translateX(-120%) rotate(14deg);
+  transition: transform 420ms ease;
+}
+
+.game-card::after {
+  inset: 1px;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 60%);
+}
+
+.game-card.hidden:hover,
+.game-card.hidden:focus-visible {
+  transform: translateY(-6px) scale(1.03) rotateX(7deg);
+  box-shadow: 0 18px 36px rgba(0, 245, 255, 0.18), 0 0 24px rgba(0, 245, 255, 0.16);
+  filter: saturate(1.1);
+}
+
+#app[data-mode="display"] .game-card.hidden.previewed {
+  transform: translateY(-6px) scale(1.03) rotateX(7deg);
+  box-shadow: 0 18px 36px rgba(0, 245, 255, 0.18), 0 0 24px rgba(0, 245, 255, 0.16);
+  filter: saturate(1.12);
+}
+
+.game-card.hidden:hover::before,
+.game-card.hidden:focus-visible::before {
+  transform: translateX(110%) rotate(14deg);
+}
+
+#app[data-mode="display"] .game-card.hidden.previewed::before {
+  transform: translateX(110%) rotate(14deg);
+}
+
+.game-card:active {
+  transform: translateY(-1px) scale(0.985);
 }
 
 .game-card.solved {
@@ -361,6 +536,7 @@ textarea {
     linear-gradient(180deg, rgba(58, 28, 0, 0.95), rgba(255, 183, 3, 0.9)) padding-box,
     linear-gradient(135deg, #ffd166, #ff6a00) border-box;
   color: #ff2727;
+  box-shadow: 0 10px 24px rgba(255, 183, 3, 0.18);
 }
 
 .game-card.bomb {
@@ -368,6 +544,7 @@ textarea {
     linear-gradient(180deg, rgba(43, 0, 0, 0.96), rgba(255, 59, 59, 0.88)) padding-box,
     linear-gradient(135deg, #ff6b6b, #ff0000) border-box;
   color: #fff;
+  box-shadow: 0 10px 28px rgba(255, 59, 59, 0.22);
 }
 
 .cta,
@@ -394,6 +571,7 @@ textarea {
   font-weight: 900;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
 
 .ghost,
@@ -406,6 +584,7 @@ textarea {
   color: white;
   background: rgba(0, 0, 0, 0.28);
   border: 1px solid rgba(255, 255, 255, 0.18);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .ghost:disabled {
@@ -417,6 +596,7 @@ textarea {
   background: linear-gradient(135deg, var(--yellow), #00e676);
   color: #1a0033;
   font-weight: 900;
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
 
 .ghost-icon {
@@ -427,6 +607,7 @@ textarea {
   color: #1a0033;
   font-size: 16px;
   font-weight: 900;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
 .floating-controls {
@@ -446,6 +627,16 @@ textarea {
   font-size: 12px;
   font-weight: 900;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+
+.cta:hover,
+.ghost:hover,
+.start-btn:hover,
+.ghost-icon:hover,
+.fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.2);
 }
 
 .fab-team {
@@ -570,6 +761,13 @@ textarea {
   background: rgba(0, 0, 0, 0.34);
   color: white;
   font-size: 22px;
+  transition: transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.back-btn:hover {
+  transform: translateX(-2px);
+  background: rgba(0, 245, 255, 0.14);
+  box-shadow: 0 10px 20px rgba(0, 245, 255, 0.14);
 }
 
 .timer-wrap {
@@ -589,6 +787,10 @@ textarea {
   font-size: clamp(28px, 3vw, 46px);
   font-weight: 900;
   box-shadow: 0 0 22px rgba(0, 245, 255, 0.2);
+}
+
+#app[data-mode="display"] .timer-badge {
+  animation: timerBob 2.4s ease-in-out infinite;
 }
 
 .timer-badge.urgent {
@@ -621,19 +823,36 @@ textarea {
 .question-stage {
   height: 100%;
   min-height: 0;
+  position: relative;
   padding: 8px;
   border-radius: 18px;
   cursor: default;
   overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(0, 245, 255, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(24, 14, 44, 0.94), rgba(11, 9, 25, 0.96));
 }
 
 .question-stage.ready {
   box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.18), 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
+.question-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 16% 14%, rgba(255, 255, 255, 0.08), transparent 18%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), transparent 30%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 .question-shell {
   height: 100%;
   min-height: 0;
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -656,6 +875,7 @@ textarea {
   font-size: clamp(24px, 2.4vw, 38px);
   line-height: 1.16;
   font-weight: 700;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
 }
 
 .start-hint {
@@ -690,6 +910,12 @@ textarea {
   background: rgba(106, 27, 154, 0.92);
   color: white;
   text-align: left;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.choice:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px rgba(106, 27, 154, 0.24);
 }
 
 .choice.selected {
@@ -880,6 +1106,7 @@ textarea {
 
 .bomb-wrap {
   overflow: hidden;
+  position: relative;
 }
 
 .bomb-video-host,
@@ -896,6 +1123,7 @@ textarea {
   max-height: min(68vh, 620px);
   object-fit: cover;
   background: black;
+  filter: saturate(1.06) contrast(1.06);
 }
 
 .bomb-control-card {
@@ -904,6 +1132,9 @@ textarea {
   min-height: min(68vh, 620px);
   gap: 10px;
   text-align: center;
+  background:
+    radial-gradient(circle at center, rgba(255, 23, 68, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(56, 9, 18, 0.9), rgba(20, 8, 12, 0.94));
 }
 
 .bomb-control-icon {
@@ -1000,6 +1231,71 @@ textarea {
   overflow: auto;
 }
 
+.rules-page-1 .rules-card,
+.rules-page-2 .rules-card,
+.rules-page-3 .rules-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 16px;
+}
+
+.rules-page-1 .rules-card > p,
+.rules-page-2 .rules-card > p,
+.rules-page-3 .rules-card > p {
+  margin: 0;
+}
+
+.rules-page-1 .rule-grid {
+  gap: 8px;
+}
+
+.rules-page-1 .tile,
+.rules-page-2 .tile,
+.rules-page-3 .tile {
+  padding: 10px;
+}
+
+.rules-page-2 .rule-grid.cols-4 {
+  gap: 8px;
+}
+
+.rules-page-2 .tile {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.rules-page-2 .rules-effect-image {
+  max-height: 96px;
+}
+
+.rules-page-2 .rules-effect-name {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.rules-page-2 .rules-effect-desc,
+.rules-page-2 .rules-effect-timing,
+.rules-page-2 .rules-effect-usage {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.rules-page-3 .rule-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rules-page-3 .tile {
+  display: grid;
+  place-items: center;
+  min-height: 88px;
+  text-align: center;
+  font-weight: 800;
+}
+
 .rules-intro-image {
   width: 100%;
   height: 100%;
@@ -1077,9 +1373,78 @@ textarea {
 }
 
 .summary-copy {
+  margin: 0;
   font-size: clamp(22px, 3vw, 38px);
   text-align: center;
   color: var(--yellow);
+}
+
+::view-transition-group(opened-card) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(opened-card) {
+  animation: openedCardOld 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-new(opened-card) {
+  animation: openedCardNew 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes auroraDrift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, 1%, 0) scale(1.04);
+  }
+}
+
+@keyframes activeTeamPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.28), 0 0 22px rgba(0, 245, 255, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgba(0, 245, 255, 0.38), 0 0 30px rgba(0, 245, 255, 0.28);
+  }
+}
+
+@keyframes timerBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes openedCardOld {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: saturate(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.08);
+    filter: saturate(1.2) blur(6px);
+  }
+}
+
+@keyframes openedCardNew {
+  from {
+    opacity: 0.2;
+    transform: scale(0.72);
+    filter: blur(10px) saturate(1.2);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) saturate(1);
+  }
 }
 
 @media (max-width: 1100px) {
@@ -1101,6 +1466,10 @@ textarea {
 
   .rule-grid.cols-3,
   .rule-grid.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rules-page-3 .rule-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1134,6 +1503,14 @@ textarea {
   .rule-grid.cols-3,
   .rule-grid.cols-4 {
     grid-template-columns: 1fr;
+  }
+
+  .rules-page-3 .rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rules-page-2 .rules-effect-image {
+    max-height: 120px;
   }
 
   .choice {
