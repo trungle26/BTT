@@ -24,6 +24,7 @@ let lastActionAt = 0;
 let displayTransitionCardIndex = null;
 let previewedCardIndex = null;
 let lastPublishedPreviewCardIndex = null;
+let presentationMediaRetryTimer = null;
 const persistentBombShell = document.createElement("div");
 persistentBombShell.className = "bomb-video-shell";
 persistentBombShell.innerHTML = `
@@ -368,6 +369,17 @@ function restoreMediaSnapshot() {
   });
 }
 
+function attemptVideoPlayback(video) {
+  if (!video) return;
+
+  const startPlayback = () => {
+    video.play().catch(() => {});
+  };
+
+  if (video.readyState >= 2) startPlayback();
+  else video.addEventListener("canplay", startPlayback, { once: true });
+}
+
 function shouldShowDiscussionVideo(state) {
   return !state.supportVideoForcedClosed && (state.isDiscussionPhase || discussionVideoPendingEnd);
 }
@@ -383,8 +395,8 @@ function syncPersistentBombVideo(state) {
       } catch {
         // Ignore seek errors before metadata is ready.
       }
-      persistentBombVideo.play().catch(() => {});
     }
+    attemptVideoPlayback(persistentBombVideo);
     return;
   }
 
@@ -405,9 +417,7 @@ function syncPersistentDiscussionVideo(state) {
       video.currentTime = 0;
     }
 
-    if (video.paused) {
-      video.play().catch(() => {});
-    }
+    attemptVideoPlayback(video);
     return;
   }
 
@@ -418,6 +428,35 @@ function syncPersistentDiscussionVideo(state) {
   if (persistentDiscussionShell.parentElement) {
     persistentDiscussionShell.parentElement.removeChild(persistentDiscussionShell);
   }
+}
+
+function syncPresentationMediaPlayback(state = currentState) {
+  if (!IS_DISPLAY_MODE || !state) return;
+
+  syncPersistentBombVideo(state);
+  syncPersistentDiscussionVideo(state);
+}
+
+function ensurePresentationMediaRetryLoop() {
+  if (!IS_DISPLAY_MODE) return;
+  if (presentationMediaRetryTimer) return;
+
+  presentationMediaRetryTimer = window.setInterval(() => {
+    if (!currentState) return;
+    if (document.hidden) return;
+
+    const shouldRetryDiscussion =
+      shouldShowDiscussionVideo(currentState) &&
+      persistentDiscussionShell.parentElement &&
+      persistentDiscussionVideo.paused;
+    const shouldRetryBomb =
+      isBombPresentation(currentState) &&
+      persistentBombShell.parentElement &&
+      persistentBombVideo.paused;
+
+    if (shouldRetryDiscussion) attemptVideoPlayback(persistentDiscussionVideo);
+    if (shouldRetryBomb) attemptVideoPlayback(persistentBombVideo);
+  }, 1000);
 }
 
 function renderCardsGrid(state) {
@@ -846,8 +885,7 @@ function render(state) {
   teardownOutgoingMedia(state);
   app.innerHTML = html;
   restoreMediaSnapshot();
-  syncPersistentBombVideo(state);
-  syncPersistentDiscussionVideo(state);
+  syncPresentationMediaPlayback(state);
   syncPreviewCardHighlight(state);
 }
 
@@ -1035,6 +1073,17 @@ window.addEventListener("storage", (event) => {
 });
 
 if (IS_DISPLAY_MODE) {
+  ensurePresentationMediaRetryLoop();
+  window.addEventListener("focus", () => {
+    syncPresentationMediaPlayback();
+  });
+  window.addEventListener("pageshow", () => {
+    syncPresentationMediaPlayback();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) syncPresentationMediaPlayback();
+  });
+
   if (currentState) {
     syncAudioForState(currentState);
     render(currentState);
