@@ -425,6 +425,166 @@ function createResetStatePreservingContent(currentState) {
   };
 }
 
+function createQuestionBankExport(currentState) {
+  return {
+    type: "btt:minigame2:question-bank",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    schemaVersion: currentState.schemaVersion ?? createDefaultState().schemaVersion,
+    roundIntro: clone(currentState.roundIntro),
+    round1: {
+      cells: currentState.round1.cells.map((cell) => ({
+        revealType: cell.revealType,
+        caption: cell.caption,
+        content: clone(cell.content),
+      })),
+    },
+    round2: {
+      gridColumns: currentState.round2.gridColumns,
+      highlightColumn: currentState.round2.highlightColumn,
+      centerAnswer: currentState.round2.centerAnswer,
+      centerHints: clone(currentState.round2.centerHints),
+      rows: currentState.round2.rows.map((row) => ({
+        clue: row.clue,
+        answerWord: row.answerWord,
+        startColumn: row.startColumn,
+        content: clone(row.content),
+      })),
+      seeFuture: {
+        teamId: currentState.round2.seeFuture.teamId,
+        hint: currentState.round2.seeFuture.hint,
+      },
+    },
+    round3: {
+      correctPoints: currentState.round3.correctPoints,
+      wrongPoints: currentState.round3.wrongPoints,
+      packs: currentState.round3.packs.map((pack) => ({
+        id: pack.id,
+        typeId: pack.typeId,
+        slot: pack.slot,
+        label: pack.label,
+        questions: pack.questions.map((question) => ({
+          label: question.label,
+          content: clone(question.content),
+        })),
+      })),
+    },
+  };
+}
+
+function applyImportedQuestionBank(currentState, importedData) {
+  const payload =
+    importedData?.type === "btt:minigame2:question-bank" && importedData
+      ? importedData
+      : importedData?.questionBank?.type === "btt:minigame2:question-bank"
+        ? importedData.questionBank
+        : null;
+
+  if (!payload) {
+    throw new Error("Invalid question bank file.");
+  }
+
+  const base = createDefaultState();
+  const nextState = clone(currentState);
+  const round1Cells = base.round1.cells.map((cell, index) => ({
+    ...nextState.round1.cells[index],
+    ...cell,
+    revealType: payload.round1?.cells?.[index]?.revealType ?? cell.revealType,
+    typeVisible: false,
+    caption: payload.round1?.cells?.[index]?.caption ?? cell.caption,
+    content: {
+      ...cell.content,
+      ...(payload.round1?.cells?.[index]?.content ?? {}),
+      timerSeconds: Math.max(
+        5,
+        Number(payload.round1?.cells?.[index]?.content?.timerSeconds || QUESTION_TIMER_SECONDS),
+      ),
+    },
+  }));
+
+  const round2Rows = base.round2.rows.map((row, index) => ({
+    ...nextState.round2.rows[index],
+    ...row,
+    clue: payload.round2?.rows?.[index]?.clue ?? row.clue,
+    answerWord: payload.round2?.rows?.[index]?.answerWord ?? row.answerWord,
+    startColumn: payload.round2?.rows?.[index]?.startColumn ?? row.startColumn,
+    content: {
+      ...row.content,
+      ...(payload.round2?.rows?.[index]?.content ?? {}),
+      timerSeconds: Math.max(
+        5,
+        Number(payload.round2?.rows?.[index]?.content?.timerSeconds || QUESTION_TIMER_SECONDS),
+      ),
+    },
+  }));
+
+  const importedRound3Packs = buildRound3Packs(payload.round3?.packs).map((pack, packIndex) => ({
+    ...pack,
+    questions: pack.questions.map((question, questionIndex) => ({
+      ...question,
+      status: nextState.round3.packs[packIndex]?.questions?.[questionIndex]?.status ?? question.status,
+      trap: nextState.round3.packs[packIndex]?.questions?.[questionIndex]?.trap ?? question.trap,
+      content: {
+        ...question.content,
+        timerSeconds: Math.max(5, Number(question.content?.timerSeconds || QUESTION_TIMER_SECONDS)),
+      },
+    })),
+  }));
+
+  nextState.schemaVersion = Math.max(Number(nextState.schemaVersion || 0), 7);
+  nextState.roundIntro = {
+    ...base.roundIntro,
+    ...(payload.roundIntro ?? {}),
+    videos: {
+      ...base.roundIntro.videos,
+      ...(payload.roundIntro?.videos ?? {}),
+    },
+  };
+  nextState.round1 = {
+    ...nextState.round1,
+    cells: round1Cells,
+  };
+  nextState.round2 = {
+    ...nextState.round2,
+    gridColumns: payload.round2?.gridColumns ?? base.round2.gridColumns,
+    highlightColumn: payload.round2?.highlightColumn ?? base.round2.highlightColumn,
+    centerAnswer: payload.round2?.centerAnswer ?? base.round2.centerAnswer,
+    centerHints: Array.isArray(payload.round2?.centerHints) ? [...payload.round2.centerHints] : [...base.round2.centerHints],
+    rows: round2Rows,
+    seeFuture: {
+      ...nextState.round2.seeFuture,
+      teamId: payload.round2?.seeFuture?.teamId ?? nextState.round2.seeFuture.teamId,
+      hint: payload.round2?.seeFuture?.hint ?? base.round2.seeFuture.hint,
+      visible: nextState.round2.seeFuture.visible,
+    },
+  };
+  nextState.round3 = {
+    ...nextState.round3,
+    correctPoints: payload.round3?.correctPoints ?? nextState.round3.correctPoints,
+    wrongPoints: payload.round3?.wrongPoints ?? nextState.round3.wrongPoints,
+    packs: importedRound3Packs,
+  };
+  nextState.presentation = createPresentationState();
+  nextState.introPlayback = createIntroPlaybackState();
+  nextState.showStandings = false;
+
+  return nextState;
+}
+
+function downloadQuestionBank() {
+  const exportData = createQuestionBankExport(state);
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  link.href = url;
+  link.download = `btt-minigame2-question-bank-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function normalizeRoundNumber(roundNumber) {
   const parsed = Number(roundNumber);
   return AVAILABLE_ROUNDS.includes(parsed) ? parsed : AVAILABLE_ROUNDS[0];
@@ -1402,6 +1562,8 @@ function renderControlApp() {
             Question Bank
           </button>
         </div>
+        <button class="toolbar-btn" data-action="export-question-bank">Export Bank</button>
+        <button class="toolbar-btn" data-action="import-question-bank">Import Bank</button>
         <button class="toolbar-btn primary" data-action="open-display">Open Projector</button>
         <button class="toolbar-btn" data-action="reset-state">Reset State</button>
       </div>
@@ -1413,6 +1575,7 @@ function renderControlApp() {
       <div class="control-shell">
         ${topbar}
         ${renderLiveWorkspace()}
+        <input id="question-bank-import-input" type="file" accept=".json,application/json" data-action="import-question-bank-file" hidden>
       </div>
     `;
   }
@@ -1421,6 +1584,7 @@ function renderControlApp() {
     <div class="control-shell">
       ${topbar}
       ${renderQuestionBankWorkspace()}
+      <input id="question-bank-import-input" type="file" accept=".json,application/json" data-action="import-question-bank-file" hidden>
     </div>
   `;
   /*
@@ -3260,6 +3424,20 @@ function handleClick(actionNode) {
     return;
   }
 
+  if (action === "export-question-bank") {
+    downloadQuestionBank();
+    return;
+  }
+
+  if (action === "import-question-bank") {
+    const input = document.getElementById("question-bank-import-input");
+    if (input instanceof HTMLInputElement) {
+      input.value = "";
+      input.click();
+    }
+    return;
+  }
+
   if (action === "reset-state") {
     if (window.confirm("Reset to a fresh Minigame 2 state?")) {
       editorState.round1Index = 0;
@@ -3708,6 +3886,32 @@ function handleClick(actionNode) {
 function handleChange(target) {
   const action = target.dataset.action;
   if (!action || IS_DISPLAY_MODE) return;
+
+  if (action === "import-question-bank-file") {
+    const file = target.files?.[0];
+    if (!file) return;
+
+    file
+      .text()
+      .then((raw) => {
+        const parsed = JSON.parse(raw);
+        const nextState = applyImportedQuestionBank(state, parsed);
+        editorState.round1Index = 0;
+        editorState.round2Index = 0;
+        editorState.round3PackId = normalizeRound3PackId(nextState, nextState.round3?.selectedPack);
+        editorState.round3Index = 0;
+        applyState(nextState);
+        window.alert("Question bank imported successfully.");
+      })
+      .catch((error) => {
+        console.error(error);
+        window.alert("Import failed. Please use a valid question bank JSON file.");
+      })
+      .finally(() => {
+        target.value = "";
+      });
+    return;
+  }
 
   if (action === "presentation-set-score-team") {
     updateState((draft) => {
