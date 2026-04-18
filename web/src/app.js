@@ -1293,8 +1293,6 @@ function renderQuestionContentBlocks(item, showPlayerResponse = true) {
           `
           : ""
       }
-
-      ${showPlayerResponse ? renderPresentationResponseDisplay(item) : ""}
     </div>
   `;
 }
@@ -1964,7 +1962,6 @@ function renderPresentationScreen() {
           <div class="presentation-topbar">
             <div>
               <div class="presentation-kicker">${esc(getPresentationLabel(item))}</div>
-              <h2 class="presentation-title">${esc(content.title || getPresentationLabel(item))}</h2>
             </div>
             ${
               state.presentation.timerVisible
@@ -2006,8 +2003,6 @@ function renderPresentationScreen() {
   if (state.presentation.media === "explosion") {
     return `
       <section class="presentation-stage media-stage bomb-stage full-video-stage">
-        <div class="presentation-kicker">${esc(getPresentationLabel(item))}</div>
-        <h2 class="presentation-title">Bomb</h2>
         <div class="presentation-video-frame bomb-video-frame">
           <video
             class="presentation-video bomb-video"
