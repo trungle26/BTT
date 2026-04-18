@@ -7,6 +7,7 @@ const IS_DISPLAY_MODE = APP_MODE === "display";
 const STORAGE_KEY = "btt:minigame2:shared-state:v2";
 const CHANNEL_NAME = "btt:minigame2:sync";
 const AVAILABLE_ROUNDS = [1, 2, 3];
+const COVER_SCREEN = "cover";
 const INTRO_SCREEN_BY_ROUND = {
   1: "intro_1",
   2: "intro_2",
@@ -18,6 +19,7 @@ const ROUND_BY_INTRO_SCREEN = {
   intro_3: 3,
 };
 const NAVIGATOR_SEQUENCE = [
+  COVER_SCREEN,
   INTRO_SCREEN_BY_ROUND[1],
   1,
   INTRO_SCREEN_BY_ROUND[2],
@@ -34,6 +36,11 @@ const CLIENT_ID =
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL_NAME) : null;
 
 const ROUND_META = {
+  [COVER_SCREEN]: {
+    short: "Cover",
+    title: "Cover Screen",
+    subtitle: "Man hinh mo dau toan man hinh truoc khi vao chuong trinh.",
+  },
   [INTRO_SCREEN_BY_ROUND[1]]: {
     short: "Intro Round 1",
     title: "Intro Round 1",
@@ -137,6 +144,13 @@ function createRoundIntroState() {
       2: createRoundIntroVideo(2),
       3: createRoundIntroVideo(3),
     },
+  };
+}
+
+function createCoverState() {
+  return {
+    imageSrc: "./assets/media/intro.jpg",
+    label: "Show cover",
   };
 }
 
@@ -305,11 +319,12 @@ function buildRound3Packs(sourcePacks, options = {}) {
 function createDefaultState() {
   return {
     schemaVersion: 7,
-    currentRound: INTRO_SCREEN_BY_ROUND[1],
+    currentRound: COVER_SCREEN,
     currentTeamId: "team_1",
     lastSoundCue: null,
     showStandings: false,
     teams: Array.from({ length: 4 }, (_, index) => createTeam(index)),
+    cover: createCoverState(),
     roundIntro: createRoundIntroState(),
     introPlayback: createIntroPlaybackState(),
     presentation: createPresentationState(),
@@ -395,6 +410,10 @@ function createResetStatePreservingContent(currentState) {
   return {
     ...base,
     teams,
+    cover: {
+      ...base.cover,
+      ...(currentState.cover ?? {}),
+    },
     roundIntro: clone(currentState.roundIntro ?? base.roundIntro),
     round1: {
       ...base.round1,
@@ -600,7 +619,12 @@ function isIntroScreen(screen) {
   return typeof screen === "string" && screen in ROUND_BY_INTRO_SCREEN;
 }
 
+function isCoverScreen(screen) {
+  return screen === COVER_SCREEN;
+}
+
 function getRoundNumberForScreen(screen) {
+  if (isCoverScreen(screen)) return 1;
   if (isIntroScreen(screen)) return ROUND_BY_INTRO_SCREEN[screen];
   return normalizeRoundNumber(screen);
 }
@@ -678,6 +702,10 @@ function hydrateState(parsed) {
     ),
     showStandings: Boolean(parsed.showStandings),
     teams,
+    cover: {
+      ...base.cover,
+      ...(parsed.cover ?? {}),
+    },
     roundIntro: {
       ...base.roundIntro,
       ...(parsed.roundIntro ?? {}),
@@ -1323,6 +1351,14 @@ function getCurrentRoundIntroVideo(currentState = state) {
   };
 }
 
+function getCurrentCover(currentState = state) {
+  return {
+    ...createCoverState(),
+    ...(currentState.cover ?? {}),
+    imageSrc: String(currentState.cover?.imageSrc ?? "").trim() || "./assets/media/intro.jpg",
+  };
+}
+
 function renderCurrentTeamSummary() {
   const team = findTeam(state.currentTeamId);
   return `
@@ -1765,7 +1801,7 @@ function renderProjectorApp(embedded) {
   const activeScreen = normalizeScreenValue(state.currentRound);
   const roundMeta = getVisibleRoundMeta();
   const isNavigationScreen =
-    isIntroScreen(activeScreen) &&
+    (isCoverScreen(activeScreen) || isIntroScreen(activeScreen)) &&
     !state.showStandings &&
     (!state.presentation.open || !state.presentation.ref);
 
@@ -1773,7 +1809,7 @@ function renderProjectorApp(embedded) {
     return `
       <div class="projector-shell ${embedded ? "embedded" : "fullscreen"} navigation-screen-shell">
         <main class="projector-main navigation-screen-main">
-          ${renderRoundIntroScreen()}
+          ${isCoverScreen(activeScreen) ? renderCoverScreen() : renderRoundIntroScreen()}
         </main>
       </div>
     `;
@@ -1896,6 +1932,30 @@ function renderRoundIntroScreen() {
             <div class="round-intro-placeholder">
               <div class="banner-label">Video missing</div>
               <div class="banner-value">Expected file: ./assets/media/round${roundNumber}.mp4</div>
+            </div>
+          `
+      }
+    </section>
+  `;
+}
+
+function renderCoverScreen() {
+  const cover = getCurrentCover();
+  const src = String(cover.imageSrc ?? "").trim();
+
+  return `
+    <section class="presentation-stage cover-stage">
+      ${
+        src
+          ? `
+            <div class="cover-screen-frame">
+              <img class="cover-screen-image" src="${esc(src)}" alt="${esc(cover.label || "Cover")}">
+            </div>
+          `
+          : `
+            <div class="round-intro-placeholder">
+              <div class="banner-label">Cover missing</div>
+              <div class="banner-value">Expected file: ./assets/media/intro.jpg</div>
             </div>
           `
       }
@@ -2326,19 +2386,24 @@ function renderRoundAdminPanel() {
 function renderNavigationAdmin() {
   const activeScreen = normalizeScreenValue(state.currentRound);
   const roundNumber = getRoundNumberForScreen(activeScreen);
+  const isCover = isCoverScreen(activeScreen);
 
   return `
     <section class="admin-card">
       <div class="panel-heading">
         <div>
-          <div class="eyebrow">Intro screen</div>
-          <h2 class="panel-title">${esc(ROUND_META[activeScreen]?.title ?? "Intro")}</h2>
+          <div class="eyebrow">${isCover ? "Cover screen" : "Intro screen"}</div>
+          <h2 class="panel-title">${esc(ROUND_META[activeScreen]?.title ?? (isCover ? "Cover" : "Intro"))}</h2>
         </div>
       </div>
 
       <div class="stacked-block">
         <div class="status-empty">
-          Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.
+          ${
+            isCover
+              ? `Clicking this screen in Round Navigator will show <strong>./assets/media/intro.jpg</strong> fullscreen on the projector.`
+              : `Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.`
+          }
         </div>
       </div>
     </section>
@@ -2346,7 +2411,7 @@ function renderNavigationAdmin() {
 }
 
 function renderLiveRoundAdminPanel() {
-  if (isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
   if (state.currentRound === 1) return renderRound1LiveAdmin();
   if (state.currentRound === 2) return renderRound2LiveAdmin();
   if (state.currentRound === 3) return renderRound3LiveAdmin();
@@ -2354,7 +2419,7 @@ function renderLiveRoundAdminPanel() {
 }
 
 function renderQuestionBankPanel() {
-  if (isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
   if (state.currentRound === 1) return renderRound1Admin();
   if (state.currentRound === 2) return renderRound2Admin();
   if (state.currentRound === 3) return renderRound3Admin();
@@ -2362,6 +2427,7 @@ function renderQuestionBankPanel() {
 }
 
 function renderRoundDisplay() {
+  if (isCoverScreen(state.currentRound)) return renderCoverScreen();
   if (isIntroScreen(state.currentRound)) return renderRoundIntroScreen();
   if (state.currentRound === 1) return renderRound1Display();
   if (state.currentRound === 2) return renderRound2Display();
