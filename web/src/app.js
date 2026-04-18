@@ -149,7 +149,7 @@ function createRoundIntroState() {
 
 function createCoverState() {
   return {
-    imageSrc: "./assets/media/intro.jpg",
+    imageSrc: "./assets/media/background.jpg",
     label: "Show cover",
   };
 }
@@ -1244,13 +1244,31 @@ function shouldPlayTickingAudio(currentState = state) {
   return false;
 }
 
+function getTickingAudioName(currentState = state) {
+  if (currentState.currentRound === 3 && getCurrentRound3PresentationRef(currentState)) {
+    return "sfx_time_ticking_2min";
+  }
+
+  if (currentState.presentation.open && currentState.presentation.ref?.scope !== "round3-question") {
+    return "sfx_time_ticking";
+  }
+
+  return null;
+}
+
 function syncTimerAudio(currentState = state) {
   if (!IS_DISPLAY_MODE || !sfx) return;
 
   const shouldTick = shouldPlayTickingAudio(currentState);
+  const tickingAudioName = getTickingAudioName(currentState);
   if (shouldTick && !tickingAudioActive) {
     tickingAudioActive = true;
-    sfx.startTimeoutTicking();
+    sfx.startTimeoutTicking(tickingAudioName ?? "sfx_time_ticking");
+    return;
+  }
+
+  if (shouldTick && tickingAudioActive) {
+    sfx.startTimeoutTicking(tickingAudioName ?? "sfx_time_ticking");
     return;
   }
 
@@ -1355,7 +1373,7 @@ function getCurrentCover(currentState = state) {
   return {
     ...createCoverState(),
     ...(currentState.cover ?? {}),
-    imageSrc: String(currentState.cover?.imageSrc ?? "").trim() || "./assets/media/intro.jpg",
+    imageSrc: String(currentState.cover?.imageSrc ?? "").trim() || "./assets/media/background.jpg",
   };
 }
 
@@ -1861,9 +1879,7 @@ function renderStandingsScreen() {
   return `
     <section class="round-display standings-display">
       <div class="standings-hero">
-        <div class="banner-label">Standings</div>
-        <div class="standings-hero-title">Bang xep hang hien tai</div>
-        <div class="standings-hero-subtitle">Tong diem cac doi dang duoc dong bo theo thoi gian thuc.</div>
+        <div class="standings-hero-title">Bảng xếp hạng hiện tại</div>
       </div>
 
       <div class="standings-grid enhanced">
@@ -1955,7 +1971,7 @@ function renderCoverScreen() {
           : `
             <div class="round-intro-placeholder">
               <div class="banner-label">Cover missing</div>
-              <div class="banner-value">Expected file: ./assets/media/intro.jpg</div>
+              <div class="banner-value">Expected file: ./assets/media/background.jpg</div>
             </div>
           `
       }
@@ -2401,7 +2417,7 @@ function renderNavigationAdmin() {
         <div class="status-empty">
           ${
             isCover
-              ? `Clicking this screen in Round Navigator will show <strong>./assets/media/intro.jpg</strong> fullscreen on the projector.`
+              ? `Clicking this screen in Round Navigator will show <strong>./assets/media/background.jpg</strong> fullscreen on the projector.`
               : `Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.`
           }
         </div>
@@ -3835,7 +3851,11 @@ function handleClick(actionNode) {
       const currentRef = getCurrentRound3PresentationRef(draft);
       const fromIndex = currentRef?.packId === draft.round3.selectedPack ? currentRef.index : -1;
       const nextRef = getNextRound3QuestionRef(draft, draft.round3.selectedPack, fromIndex);
-      if (nextRef) setRound3LiveQuestion(draft, nextRef);
+      if (nextRef) {
+        setRound3LiveQuestion(draft, nextRef);
+        return;
+      }
+      pauseTimer(draft.round3.timer);
     });
     return;
   }
@@ -3866,6 +3886,7 @@ function handleClick(actionNode) {
         return;
       }
 
+      pauseTimer(draft.round3.timer);
       draft.presentation.ref = null;
       draft.presentation.showAnswer = false;
       draft.presentation.selectedChoiceIndex = -1;
@@ -3924,6 +3945,14 @@ function handleClick(actionNode) {
     updateState((draft) => {
       const timer = actionNode.dataset.timer === "presentation" ? draft.presentation.timer : draft.round3.timer;
       startTimer(timer);
+      if (actionNode.dataset.timer === "round3" && !getCurrentRound3PresentationRef(draft)) {
+        const firstRef = getNextRound3QuestionRef(draft, draft.round3.selectedPack, -1);
+        if (firstRef) {
+          setRound3LiveQuestion(draft, firstRef);
+          return;
+        }
+        pauseTimer(draft.round3.timer);
+      }
     });
     return;
   }
