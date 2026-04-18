@@ -13,18 +13,31 @@ const INTRO_SCREEN_BY_ROUND = {
   2: "intro_2",
   3: "intro_3",
 };
+const RULES_SCREEN_BY_ROUND = {
+  1: "rules_1",
+  2: "rules_2",
+  3: "rules_3",
+};
 const ROUND_BY_INTRO_SCREEN = {
   intro_1: 1,
   intro_2: 2,
   intro_3: 3,
 };
+const ROUND_BY_RULES_SCREEN = {
+  rules_1: 1,
+  rules_2: 2,
+  rules_3: 3,
+};
 const NAVIGATOR_SEQUENCE = [
   COVER_SCREEN,
   INTRO_SCREEN_BY_ROUND[1],
+  RULES_SCREEN_BY_ROUND[1],
   1,
   INTRO_SCREEN_BY_ROUND[2],
+  RULES_SCREEN_BY_ROUND[2],
   2,
   INTRO_SCREEN_BY_ROUND[3],
+  RULES_SCREEN_BY_ROUND[3],
   3,
 ];
 const QUESTION_TIMER_SECONDS = 20;
@@ -46,15 +59,30 @@ const ROUND_META = {
     title: "Intro Round 1",
     subtitle: "Phat video dieu huong truoc khi vao Round 1.",
   },
+  [RULES_SCREEN_BY_ROUND[1]]: {
+    short: "Rules Round 1",
+    title: "Rules Round 1",
+    subtitle: "Man hinh gioi thieu luat cho Round 1.",
+  },
   [INTRO_SCREEN_BY_ROUND[2]]: {
     short: "Intro Round 2",
     title: "Intro Round 2",
     subtitle: "Phat video dieu huong truoc khi vao Round 2.",
   },
+  [RULES_SCREEN_BY_ROUND[2]]: {
+    short: "Rules Round 2",
+    title: "Rules Round 2",
+    subtitle: "Man hinh gioi thieu luat cho Round 2.",
+  },
   [INTRO_SCREEN_BY_ROUND[3]]: {
     short: "Intro Round 3",
     title: "Intro Round 3",
     subtitle: "Phat video dieu huong truoc khi vao Round 3.",
+  },
+  [RULES_SCREEN_BY_ROUND[3]]: {
+    short: "Rules Round 3",
+    title: "Rules Round 3",
+    subtitle: "Man hinh gioi thieu luat cho Round 3.",
   },
   1: {
     short: "Round 1",
@@ -145,6 +173,21 @@ function createRoundIntroState() {
       3: createRoundIntroVideo(3),
     },
   };
+}
+
+function createRoundRulesItem(roundNumber) {
+  return {
+    id: `rules_${roundNumber}`,
+    roundNumber,
+    content: {
+      ...createManualContent(`Round ${roundNumber} rules`, QUESTION_TIMER_SECONDS),
+      prompt: `Nhap noi dung gioi thieu luat cho Round ${roundNumber}.`,
+    },
+  };
+}
+
+function createRoundRulesState() {
+  return Array.from({ length: AVAILABLE_ROUNDS.length }, (_, index) => createRoundRulesItem(index + 1));
 }
 
 function createCoverState() {
@@ -325,7 +368,7 @@ function buildRound3Packs(sourcePacks, options = {}) {
 
 function createDefaultState() {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     currentRound: COVER_SCREEN,
     currentTeamId: "team_1",
     lastSoundCue: null,
@@ -333,6 +376,7 @@ function createDefaultState() {
     teams: Array.from({ length: 4 }, (_, index) => createTeam(index)),
     cover: createCoverState(),
     roundIntro: createRoundIntroState(),
+    roundRules: createRoundRulesState(),
     introPlayback: createIntroPlaybackState(),
     presentation: createPresentationState(),
     round1: {
@@ -416,6 +460,15 @@ function createResetStatePreservingContent(currentState) {
     })),
   }));
 
+  const roundRules = base.roundRules.map((ruleItem, index) => ({
+    ...ruleItem,
+    content: {
+      ...ruleItem.content,
+      ...(currentState.roundRules?.[index]?.content ?? {}),
+      timerSeconds: QUESTION_TIMER_SECONDS,
+    },
+  }));
+
   return {
     ...base,
     teams,
@@ -424,6 +477,7 @@ function createResetStatePreservingContent(currentState) {
       ...(currentState.cover ?? {}),
     },
     roundIntro: clone(currentState.roundIntro ?? base.roundIntro),
+    roundRules,
     round1: {
       ...base.round1,
       activeEffect: null,
@@ -458,6 +512,9 @@ function createQuestionBankExport(currentState) {
     exportedAt: new Date().toISOString(),
     schemaVersion: currentState.schemaVersion ?? createDefaultState().schemaVersion,
     roundIntro: clone(currentState.roundIntro),
+    roundRules: currentState.roundRules.map((item) => ({
+      content: clone(item.content),
+    })),
     round1: {
       cells: currentState.round1.cells.map((cell) => ({
         revealType: cell.revealType,
@@ -561,7 +618,17 @@ function applyImportedQuestionBank(currentState, importedData) {
     })),
   }));
 
-  nextState.schemaVersion = Math.max(Number(nextState.schemaVersion || 0), 7);
+  const roundRules = base.roundRules.map((item, index) => ({
+    ...nextState.roundRules?.[index],
+    ...item,
+    content: {
+      ...item.content,
+      ...(payload.roundRules?.[index]?.content ?? {}),
+      timerSeconds: QUESTION_TIMER_SECONDS,
+    },
+  }));
+
+  nextState.schemaVersion = Math.max(Number(nextState.schemaVersion || 0), 8);
   nextState.roundIntro = {
     ...base.roundIntro,
     ...(payload.roundIntro ?? {}),
@@ -570,6 +637,7 @@ function applyImportedQuestionBank(currentState, importedData) {
       ...(payload.roundIntro?.videos ?? {}),
     },
   };
+  nextState.roundRules = roundRules;
   nextState.round1 = {
     ...nextState.round1,
     cells: round1Cells,
@@ -628,6 +696,10 @@ function isIntroScreen(screen) {
   return typeof screen === "string" && screen in ROUND_BY_INTRO_SCREEN;
 }
 
+function isRulesScreen(screen) {
+  return typeof screen === "string" && screen in ROUND_BY_RULES_SCREEN;
+}
+
 function isCoverScreen(screen) {
   return screen === COVER_SCREEN;
 }
@@ -635,6 +707,7 @@ function isCoverScreen(screen) {
 function getRoundNumberForScreen(screen) {
   if (isCoverScreen(screen)) return 1;
   if (isIntroScreen(screen)) return ROUND_BY_INTRO_SCREEN[screen];
+  if (isRulesScreen(screen)) return ROUND_BY_RULES_SCREEN[screen];
   return normalizeRoundNumber(screen);
 }
 
@@ -690,6 +763,17 @@ function hydrateState(parsed) {
       }))
     : base.round2.rows;
 
+  const roundRules = Array.isArray(parsed.roundRules)
+    ? base.roundRules.map((item, index) => ({
+        ...item,
+        ...(parsed.roundRules[index] ?? {}),
+        content: {
+          ...item.content,
+          ...(parsed.roundRules[index]?.content ?? {}),
+        },
+      }))
+    : base.roundRules;
+
   let round3Packs = buildRound3Packs(parsed.round3?.packs, { preserveQuestionState: true });
 
   if (requiresTimerMigration) {
@@ -723,6 +807,7 @@ function hydrateState(parsed) {
         ...(parsed.roundIntro?.videos ?? {}),
       },
     },
+    roundRules,
     introPlayback: {
       ...base.introPlayback,
       ...(parsed.introPlayback ?? {}),
@@ -969,6 +1054,7 @@ function getRound3WrongPoints(packOrPackId, currentState = state) {
 function getScopedItem(currentState, scope, index, packId = null) {
   if (scope === "round1-cell") return currentState.round1.cells[index] ?? null;
   if (scope === "round2-row") return currentState.round2.rows[index] ?? null;
+  if (scope === "round-rule") return currentState.roundRules[index] ?? null;
   if (scope === "round3-question") {
     const pack =
       currentState.round3.packs.find((item) => item.id === normalizeRound3PackId(currentState, packId)) ??
@@ -1429,6 +1515,11 @@ function getCurrentRoundIntroVideo(currentState = state) {
   };
 }
 
+function getCurrentRoundRulesItem(currentState = state) {
+  const roundNumber = getRoundNumberForScreen(currentState.currentRound);
+  return currentState.roundRules?.[roundNumber - 1] ?? createRoundRulesItem(roundNumber);
+}
+
 function getCurrentCover(currentState = state) {
   return {
     ...createCoverState(),
@@ -1884,7 +1975,7 @@ function renderProjectorApp(embedded) {
   const activeScreen = normalizeScreenValue(state.currentRound);
   const roundMeta = getVisibleRoundMeta();
   const isNavigationScreen =
-    (isCoverScreen(activeScreen) || isIntroScreen(activeScreen)) &&
+    (isCoverScreen(activeScreen) || isIntroScreen(activeScreen) || isRulesScreen(activeScreen)) &&
     !state.showStandings &&
     (!state.presentation.open || !state.presentation.ref);
 
@@ -1892,7 +1983,7 @@ function renderProjectorApp(embedded) {
     return `
       <div class="projector-shell ${embedded ? "embedded" : "fullscreen"} navigation-screen-shell">
         <main class="projector-main navigation-screen-main">
-          ${isCoverScreen(activeScreen) ? renderCoverScreen() : renderRoundIntroScreen()}
+          ${isCoverScreen(activeScreen) ? renderCoverScreen() : isIntroScreen(activeScreen) ? renderRoundIntroScreen() : renderRoundRulesScreen()}
         </main>
       </div>
     `;
@@ -2016,6 +2107,23 @@ function renderRoundIntroScreen() {
             </div>
           `
       }
+    </section>
+  `;
+}
+
+function renderRoundRulesScreen() {
+  const item = getCurrentRoundRulesItem();
+  const content = item.content;
+
+  return `
+    <section class="presentation-stage rules-stage">
+      <div class="presentation-topbar">
+        <div>
+          <div class="presentation-kicker">${esc(ROUND_META[normalizeScreenValue(state.currentRound)]?.short ?? "Rules")}</div>
+          <h2 class="presentation-title">${esc(content.title || "Round rules")}</h2>
+        </div>
+      </div>
+      ${renderQuestionContentBlocks(item, false)}
     </section>
   `;
 }
@@ -2475,13 +2583,15 @@ function renderNavigationAdmin() {
   const activeScreen = normalizeScreenValue(state.currentRound);
   const roundNumber = getRoundNumberForScreen(activeScreen);
   const isCover = isCoverScreen(activeScreen);
+  const isRules = isRulesScreen(activeScreen);
+  const rulesItem = isRules ? getCurrentRoundRulesItem() : null;
 
   return `
     <section class="admin-card">
       <div class="panel-heading">
         <div>
-          <div class="eyebrow">${isCover ? "Cover screen" : "Intro screen"}</div>
-          <h2 class="panel-title">${esc(ROUND_META[activeScreen]?.title ?? (isCover ? "Cover" : "Intro"))}</h2>
+          <div class="eyebrow">${isCover ? "Cover screen" : isRules ? "Rules screen" : "Intro screen"}</div>
+          <h2 class="panel-title">${esc(ROUND_META[activeScreen]?.title ?? (isCover ? "Cover" : isRules ? "Rules" : "Intro"))}</h2>
         </div>
       </div>
 
@@ -2490,16 +2600,22 @@ function renderNavigationAdmin() {
           ${
             isCover
               ? `Clicking this screen in Round Navigator will show <strong>./assets/media/background.jpg</strong> fullscreen on the projector.`
-              : `Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.`
+              : isRules
+                ? `This rules screen appears after Intro Round ${roundNumber}. Edit the title, prompt, and optional image below.`
+                : `Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.`
           }
         </div>
       </div>
+
+      ${isRules && rulesItem ? renderQuestionEditor("round-rule", roundNumber - 1, rulesItem) : ""}
     </section>
   `;
 }
 
 function renderLiveRoundAdminPanel() {
-  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound) || isRulesScreen(state.currentRound)) {
+    return renderNavigationAdmin();
+  }
   if (state.currentRound === 1) return renderRound1LiveAdmin();
   if (state.currentRound === 2) return renderRound2LiveAdmin();
   if (state.currentRound === 3) return renderRound3LiveAdminV2();
@@ -2507,7 +2623,9 @@ function renderLiveRoundAdminPanel() {
 }
 
 function renderQuestionBankPanel() {
-  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound) || isRulesScreen(state.currentRound)) {
+    return renderNavigationAdmin();
+  }
   if (state.currentRound === 1) return renderRound1Admin();
   if (state.currentRound === 2) return renderRound2Admin();
   if (state.currentRound === 3) return renderRound3AdminV2();
@@ -2517,6 +2635,7 @@ function renderQuestionBankPanel() {
 function renderRoundDisplay() {
   if (isCoverScreen(state.currentRound)) return renderCoverScreen();
   if (isIntroScreen(state.currentRound)) return renderRoundIntroScreen();
+  if (isRulesScreen(state.currentRound)) return renderRoundRulesScreen();
   if (state.currentRound === 1) return renderRound1Display();
   if (state.currentRound === 2) return renderRound2Display();
   if (state.currentRound === 3) return renderRound3DisplayV2();
@@ -2562,10 +2681,6 @@ function renderRound1Admin() {
         <div>
           <div class="eyebrow">Selected card</div>
           <h3 class="panel-title">O ${selectedCell.number}</h3>
-        </div>
-        <div class="current-team-summary">
-          <span class="eyebrow">Current mark</span>
-          <strong>${esc(currentQuestionTrapLabel)}</strong>
         </div>
         <div class="inline-action-row">
           <button class="small-btn" data-action="open-item-screen" data-scope="round1-cell" data-index="${editorState.round1Index}">
@@ -4479,6 +4594,7 @@ function handleClick(actionNode) {
       }
 
       question.status = "done";
+      draft.presentation.showAnswer = true;
       draft.round3.bombVideoVisible = false;
       draft.round3.bombVideoToken = null;
       draft.presentation.scoreTeamId = draft.round3.activeTeamId;
