@@ -246,7 +246,7 @@ select {
 }
 
 .round-switcher {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   margin-top: 10px;
 }
 
@@ -443,6 +443,18 @@ select {
   min-height: 100vh;
 }
 
+.projector-shell.navigation-screen-shell {
+  grid-template-rows: minmax(0, 1fr);
+  background: #000;
+}
+
+.projector-shell.standings-screen-shell {
+  grid-template-rows: minmax(0, 1fr);
+  background:
+    radial-gradient(circle at top, rgba(255, 206, 112, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(10, 14, 22, 0.98), rgba(7, 10, 17, 1));
+}
+
 .projector-header {
   padding: 28px 34px 16px;
   display: flex;
@@ -468,6 +480,16 @@ select {
 
 .projector-main {
   padding: 0 34px 28px;
+  overflow: auto;
+}
+
+.navigation-screen-main {
+  padding: 0;
+  overflow: hidden;
+}
+
+.standings-screen-main {
+  padding: 24px 28px 30px;
   overflow: auto;
 }
 
@@ -536,30 +558,85 @@ select {
   color: var(--gold);
 }
 
-.score-team-functions {
-  margin-top: 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.function-chip {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-}
-
-.function-chip.active {
-  background: rgba(127, 240, 176, 0.16);
-  border-color: rgba(127, 240, 176, 0.3);
-  color: var(--green);
-}
-
 .round-display {
   display: grid;
   gap: 18px;
+}
+
+.standings-display {
+  align-content: start;
+  gap: 24px;
+}
+
+.standings-hero {
+  max-width: 980px;
+  padding: 28px 30px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, rgba(28, 34, 50, 0.94), rgba(15, 19, 30, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+}
+
+.standings-hero-title {
+  font-family: "Orbitron", sans-serif;
+  font-size: clamp(34px, 3vw, 56px);
+}
+
+.standings-hero-subtitle {
+  color: var(--muted);
+  font-size: clamp(18px, 1.5vw, 24px);
+}
+
+.standings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.standings-grid.enhanced {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.standings-card {
+  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(21, 28, 42, 0.9), rgba(16, 20, 31, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+}
+
+.standings-card.leader {
+  background: linear-gradient(180deg, rgba(65, 48, 14, 0.94), rgba(24, 19, 11, 0.98));
+  border-color: rgba(255, 206, 112, 0.28);
+}
+
+.standings-card.active {
+  border-color: rgba(255, 206, 112, 0.36);
+  box-shadow: inset 0 0 0 1px rgba(255, 206, 112, 0.18), var(--shadow);
+}
+
+.standings-rank,
+.standings-score {
+  font-family: "Orbitron", sans-serif;
+}
+
+.standings-rank {
+  color: var(--gold);
+  font-size: clamp(24px, 2vw, 34px);
+}
+
+.standings-name {
+  font-size: clamp(26px, 2.2vw, 38px);
+  font-weight: 700;
+}
+
+.standings-score {
+  font-size: clamp(44px, 4vw, 70px);
+  color: var(--cyan);
 }
 
 .projector-banner {
@@ -632,6 +709,7 @@ select {
 
 .round-two-grid.crossword-layout {
   grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.72fr);
+  align-items: stretch;
 }
 
 .round2-bank-layout {
@@ -796,6 +874,7 @@ select {
 .r2-side-stack {
   display: grid;
   gap: 14px;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .center-label,
@@ -879,6 +958,18 @@ select {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.r2-clue-strip.compact {
+  margin-top: 0;
+  grid-template-columns: 1fr;
+  max-height: 34vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.r2-clue-panel {
+  min-height: 0;
 }
 
 .r2-clue-card.opened {
@@ -1078,17 +1169,18 @@ select {
 .presentation-title {
   margin: 8px 0 0;
   font-family: "Orbitron", sans-serif;
-  font-size: clamp(44px, 4.2vw, 74px);
+  font-size: clamp(28px, 2.5vw, 46px);
 }
 
 .presentation-prompt,
 .answer-value {
-  font-size: clamp(34px, 3.1vw, 54px);
+  font-size: clamp(40px, 3.5vw, 64px);
   line-height: 1.25;
+  white-space: pre-wrap;
 }
 
 .presentation-prompt.compact {
-  font-size: clamp(28px, 2.3vw, 42px);
+  font-size: clamp(34px, 2.9vw, 52px);
 }
 
 .presentation-timer-block,
@@ -1336,6 +1428,67 @@ select {
 .media-stage {
   text-align: center;
   gap: 24px;
+}
+
+.round-intro-stage {
+  padding: 0;
+  min-height: 100%;
+}
+
+.round-intro-video-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+}
+
+.round-intro-video {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+}
+
+.intro-audio-unlock {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 22px;
+  background: rgba(7, 10, 18, 0.72);
+  color: #fff;
+  font: 700 15px/1 "Inter", sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.28);
+}
+
+.intro-audio-unlock:hover {
+  background: rgba(255, 181, 72, 0.92);
+  color: #121722;
+}
+
+.full-intro-video-stage {
+  align-content: stretch;
+}
+
+.round-intro-placeholder {
+  width: min(100%, 980px);
+  padding: 32px;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(21, 28, 42, 0.9), rgba(16, 20, 31, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
 }
 
 .get-help-stage {

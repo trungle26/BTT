@@ -6,6 +6,27 @@ const APP_MODE = params.get("mode") === "display" ? "display" : "control";
 const IS_DISPLAY_MODE = APP_MODE === "display";
 const STORAGE_KEY = "btt:minigame2:shared-state:v2";
 const CHANNEL_NAME = "btt:minigame2:sync";
+const AVAILABLE_ROUNDS = [1, 2, 3];
+const INTRO_SCREEN_BY_ROUND = {
+  1: "intro_1",
+  2: "intro_2",
+  3: "intro_3",
+};
+const ROUND_BY_INTRO_SCREEN = {
+  intro_1: 1,
+  intro_2: 2,
+  intro_3: 3,
+};
+const NAVIGATOR_SEQUENCE = [
+  INTRO_SCREEN_BY_ROUND[1],
+  1,
+  INTRO_SCREEN_BY_ROUND[2],
+  2,
+  INTRO_SCREEN_BY_ROUND[3],
+  3,
+];
+const QUESTION_TIMER_SECONDS = 20;
+const ROUND2_ROW_COUNT = 8;
 const CLIENT_ID =
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
@@ -13,25 +34,35 @@ const CLIENT_ID =
 const syncChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(CHANNEL_NAME) : null;
 
 const ROUND_META = {
+  [INTRO_SCREEN_BY_ROUND[1]]: {
+    short: "Intro Round 1",
+    title: "Intro Round 1",
+    subtitle: "Phat video dieu huong truoc khi vao Round 1.",
+  },
+  [INTRO_SCREEN_BY_ROUND[2]]: {
+    short: "Intro Round 2",
+    title: "Intro Round 2",
+    subtitle: "Phat video dieu huong truoc khi vao Round 2.",
+  },
+  [INTRO_SCREEN_BY_ROUND[3]]: {
+    short: "Intro Round 3",
+    title: "Intro Round 3",
+    subtitle: "Phat video dieu huong truoc khi vao Round 3.",
+  },
   1: {
     short: "Round 1",
-    title: "Mo o chien thuat",
-    subtitle: "Operator chon tung o de lat Question, Challenge hoac Bomb.",
+    title: "Vượt biên",
+    subtitle: "Người chơi chọn 1 ô bất kì để trả lời câu hỏi",
   },
   2: {
     short: "Round 2",
-    title: "Hang ngang va dap an trung tam",
-    subtitle: "Mo hang ngang, tung goi y va cac trang thai dac biet theo nut dieu khien.",
+    title: "Bước vào tân thế giới",
+    subtitle: "Các đội chơi lần lượt tìm ra đáp án các ô hàng ngang để suy ra đáp án ô hàng dọc",
   },
   3: {
     short: "Round 3",
-    title: "Goi cau hoi Quickfire",
-    subtitle: "Chon goi, dieu khien dong ho 120 giay va bay Bomb/X2 cho cau tiep theo.",
-  },
-  4: {
-    short: "Round 4",
-    title: "Hung bien Final",
-    subtitle: "Chon 2 doi, dieu khien cac giai doan va nhap diem cham tay.",
+    title: "Dấn thân",
+    subtitle: "Mỗi đội chơi chọn 1 gói câu hỏi theo độ khó, tăng tốc để đạt được điểm trước khi về đích",
   },
 };
 
@@ -50,18 +81,12 @@ const ROUND1_REVEALS = {
   bomb: { label: "Bomb", icon: "B" },
 };
 
-const ROUND3_PACKS = [
+const ROUND3_PACK_TYPES = [
   { id: "easy", label: "De" },
   { id: "medium", label: "Trung binh" },
   { id: "hard", label: "Kho" },
 ];
-
-const ROUND4_STAGE_META = {
-  opening: { label: "Mo dau", durationMs: 90_000 },
-  rebuttal: { label: "Phan bien", durationMs: 60_000 },
-  questioning: { label: "Chat van", durationMs: 60_000 },
-  closing: { label: "Ket luan", durationMs: 30_000 },
-};
+const ROUND3_PACK_VARIANTS = 4;
 
 function esc(value) {
   return String(value ?? "")
@@ -86,7 +111,7 @@ function createTimer(durationMs) {
   };
 }
 
-function createManualContent(label, timerSeconds = 30) {
+function createManualContent(label, timerSeconds = QUESTION_TIMER_SECONDS) {
   return {
     title: label,
     questionType: "text",
@@ -95,6 +120,30 @@ function createManualContent(label, timerSeconds = 30) {
     imageSrc: "",
     choices: ["", "", "", ""],
     timerSeconds,
+  };
+}
+
+function createRoundIntroVideo(roundNumber) {
+  return {
+    src: `./assets/media/round${roundNumber}.mp4`,
+    label: `Round ${roundNumber} intro`,
+  };
+}
+
+function createRoundIntroState() {
+  return {
+    videos: {
+      1: createRoundIntroVideo(1),
+      2: createRoundIntroVideo(2),
+      3: createRoundIntroVideo(3),
+    },
+  };
+}
+
+function createIntroPlaybackState() {
+  return {
+    screen: null,
+    token: null,
   };
 }
 
@@ -109,7 +158,7 @@ function createPresentationState() {
     selectedChoiceIndex: -1,
     typedResponse: "",
     scoreTeamId: "team_1",
-    timer: createTimer(30_000),
+    timer: createTimer(QUESTION_TIMER_SECONDS * 1000),
   };
 }
 
@@ -129,8 +178,9 @@ function createRound1Cell(index) {
     id: `r1_${index + 1}`,
     number: index + 1,
     revealType: null,
+    typeVisible: false,
     caption: "",
-    content: createManualContent(`O ${index + 1}`, 30),
+    content: createManualContent(`O ${index + 1}`, QUESTION_TIMER_SECONDS),
   };
 }
 
@@ -142,7 +192,7 @@ function createRound2Row(index) {
     opened: false,
     answerWord: `HANG${index + 1}`,
     startColumn: Math.max(1, 7 - Math.floor(`HANG${index + 1}`.length / 2)),
-    content: createManualContent(`Hang ${index + 1}`, 45),
+    content: createManualContent(`Hang ${index + 1}`, QUESTION_TIMER_SECONDS),
   };
 }
 
@@ -152,24 +202,123 @@ function createRound3Question(index) {
     label: `Cau ${index + 1}`,
     status: "pending",
     trap: null,
-    content: createManualContent(`Cau ${index + 1}`, 120),
+    content: createManualContent(`Cau ${index + 1}`, QUESTION_TIMER_SECONDS),
   };
+}
+
+function createRound3PackId(typeId, slot) {
+  return `${typeId}_${slot}`;
+}
+
+function normalizeRound3PackTypeId(typeId) {
+  return ROUND3_PACK_TYPES.some((packType) => packType.id === typeId) ? typeId : ROUND3_PACK_TYPES[0].id;
+}
+
+function getRound3PackTypeId(packId) {
+  return normalizeRound3PackTypeId(String(packId ?? "").split("_")[0]);
+}
+
+function getRound3PackSlot(packId) {
+  return clampInteger(String(packId ?? "").split("_")[1], 1, ROUND3_PACK_VARIANTS, 1);
+}
+
+function createRound3Pack(type, slot) {
+  return {
+    id: createRound3PackId(type.id, slot),
+    typeId: type.id,
+    slot,
+    label: type.label,
+    questions: Array.from({ length: 7 }, (_, index) => createRound3Question(index)),
+  };
+}
+
+function createDefaultRound3Packs() {
+  return ROUND3_PACK_TYPES.flatMap((type) =>
+    Array.from({ length: ROUND3_PACK_VARIANTS }, (_, index) => createRound3Pack(type, index + 1)),
+  );
+}
+
+function normalizeRound3PackId(currentStateOrPacks, packId) {
+  const packs = Array.isArray(currentStateOrPacks)
+    ? currentStateOrPacks
+    : currentStateOrPacks?.round3?.packs ?? state?.round3?.packs ?? [];
+  const exactId = String(packId ?? "").trim();
+  if (packs.some((pack) => pack.id === exactId)) return exactId;
+
+  const typeId = getRound3PackTypeId(exactId);
+  const slot = getRound3PackSlot(exactId);
+  return (
+    packs.find((pack) => pack.typeId === typeId && Number(pack.slot) === slot)?.id ??
+    packs.find((pack) => pack.typeId === typeId)?.id ??
+    packs[0]?.id ??
+    createRound3PackId(ROUND3_PACK_TYPES[0].id, 1)
+  );
+}
+
+function buildRound3Packs(sourcePacks, options = {}) {
+  const { preserveQuestionState = false } = options;
+  const basePacks = createDefaultRound3Packs();
+  const parsedPacks = Array.isArray(sourcePacks) ? sourcePacks : [];
+
+  const packsById = new Map();
+  const packsByType = new Map();
+
+  parsedPacks.forEach((pack, index) => {
+    if (!pack || typeof pack !== "object") return;
+    const rawId = typeof pack.id === "string" && pack.id ? pack.id : null;
+    const typeId = rawId ? getRound3PackTypeId(rawId) : ROUND3_PACK_TYPES[index]?.id ?? ROUND3_PACK_TYPES[0].id;
+
+    if (rawId) packsById.set(rawId, pack);
+    if (!packsByType.has(typeId)) packsByType.set(typeId, []);
+    packsByType.get(typeId).push(pack);
+  });
+
+  return basePacks.map((basePack) => {
+    const typeCandidates = packsByType.get(basePack.typeId) ?? [];
+    const sourcePack =
+      packsById.get(basePack.id) ??
+      typeCandidates.find((pack) => Number(pack?.slot) === basePack.slot) ??
+      typeCandidates[basePack.slot - 1] ??
+      typeCandidates[0] ??
+      null;
+
+    return {
+      ...basePack,
+      label: typeof sourcePack?.label === "string" && sourcePack.label.trim() ? sourcePack.label : basePack.label,
+      questions: basePack.questions.map((question, index) => {
+        const sourceQuestion = sourcePack?.questions?.[index] ?? null;
+        return {
+          ...question,
+          label: sourceQuestion?.label ?? question.label,
+          status: preserveQuestionState ? sourceQuestion?.status ?? question.status : question.status,
+          trap: preserveQuestionState ? sourceQuestion?.trap ?? question.trap : question.trap,
+          content: {
+            ...question.content,
+            ...(sourceQuestion?.content ?? {}),
+          },
+        };
+      }),
+    };
+  });
 }
 
 function createDefaultState() {
   return {
-    schemaVersion: 4,
-    currentRound: 1,
+    schemaVersion: 7,
+    currentRound: INTRO_SCREEN_BY_ROUND[1],
     currentTeamId: "team_1",
     lastSoundCue: null,
+    showStandings: false,
     teams: Array.from({ length: 4 }, (_, index) => createTeam(index)),
+    roundIntro: createRoundIntroState(),
+    introPlayback: createIntroPlaybackState(),
     presentation: createPresentationState(),
     round1: {
       cells: Array.from({ length: 16 }, (_, index) => createRound1Cell(index)),
       activeEffect: null,
     },
     round2: {
-      rows: Array.from({ length: 10 }, (_, index) => createRound2Row(index)),
+      rows: Array.from({ length: ROUND2_ROW_COUNT }, (_, index) => createRound2Row(index)),
       gridColumns: 14,
       highlightColumn: 7,
       centerAnswer: "",
@@ -189,36 +338,127 @@ function createDefaultState() {
       },
     },
     round3: {
-      selectedPack: "easy",
+      selectedPack: createRound3PackId("easy", 1),
       activeTeamId: "team_1",
       correctPoints: 10,
       wrongPoints: 10,
-      packs: ROUND3_PACKS.map((pack) => ({
-        id: pack.id,
-        label: pack.label,
-        questions: Array.from({ length: 7 }, (_, index) => createRound3Question(index)),
-      })),
+      packs: createDefaultRound3Packs(),
       armedTrap: null,
       lastTrapAnnouncement: null,
       timer: createTimer(120_000),
     },
-    round4: {
-      finalists: ["team_1", "team_2"],
-      currentStage: "opening",
-      timer: createTimer(ROUND4_STAGE_META.opening.durationMs),
-      scores: {
-        team_1: { content: "", rebuttal: "", skill: "" },
-        team_2: { content: "", rebuttal: "", skill: "" },
-        team_3: { content: "", rebuttal: "", skill: "" },
-        team_4: { content: "", rebuttal: "", skill: "" },
+  };
+}
+
+function createResetStatePreservingContent(currentState) {
+  const base = createDefaultState();
+
+  const teams = base.teams.map((team, index) => ({
+    ...team,
+    name: currentState.teams?.[index]?.name ?? team.name,
+  }));
+
+  const round1Cells = base.round1.cells.map((cell, index) => ({
+    ...cell,
+    revealType: currentState.round1?.cells?.[index]?.revealType ?? cell.revealType,
+    caption: currentState.round1?.cells?.[index]?.caption ?? cell.caption,
+    content: {
+      ...cell.content,
+      ...(currentState.round1?.cells?.[index]?.content ?? {}),
+      timerSeconds: QUESTION_TIMER_SECONDS,
+    },
+  }));
+
+  const round2Rows = base.round2.rows.map((row, index) => ({
+    ...row,
+    clue: currentState.round2?.rows?.[index]?.clue ?? row.clue,
+    answerWord: currentState.round2?.rows?.[index]?.answerWord ?? row.answerWord,
+    startColumn: currentState.round2?.rows?.[index]?.startColumn ?? row.startColumn,
+    content: {
+      ...row.content,
+      ...(currentState.round2?.rows?.[index]?.content ?? {}),
+      timerSeconds: QUESTION_TIMER_SECONDS,
+    },
+  }));
+
+  const round3Packs = buildRound3Packs(currentState.round3?.packs).map((pack) => ({
+    ...pack,
+    questions: pack.questions.map((question) => ({
+      ...question,
+      content: {
+        ...question.content,
+        timerSeconds: QUESTION_TIMER_SECONDS,
       },
+    })),
+  }));
+
+  return {
+    ...base,
+    teams,
+    roundIntro: clone(currentState.roundIntro ?? base.roundIntro),
+    round1: {
+      ...base.round1,
+      activeEffect: null,
+      cells: round1Cells,
+    },
+    round2: {
+      ...base.round2,
+      gridColumns: currentState.round2?.gridColumns ?? base.round2.gridColumns,
+      highlightColumn: currentState.round2?.highlightColumn ?? base.round2.highlightColumn,
+      centerAnswer: currentState.round2?.centerAnswer ?? base.round2.centerAnswer,
+      centerHints: Array.isArray(currentState.round2?.centerHints)
+        ? [...currentState.round2.centerHints]
+        : [...base.round2.centerHints],
+      seeFuture: {
+        ...base.round2.seeFuture,
+        teamId: currentState.round2?.seeFuture?.teamId ?? base.round2.seeFuture.teamId,
+        hint: currentState.round2?.seeFuture?.hint ?? base.round2.seeFuture.hint,
+      },
+      rows: round2Rows,
+    },
+    round3: {
+      ...base.round3,
+      correctPoints: currentState.round3?.correctPoints ?? base.round3.correctPoints,
+      wrongPoints: currentState.round3?.wrongPoints ?? base.round3.wrongPoints,
+      packs: round3Packs,
     },
   };
+}
+
+function normalizeRoundNumber(roundNumber) {
+  const parsed = Number(roundNumber);
+  return AVAILABLE_ROUNDS.includes(parsed) ? parsed : AVAILABLE_ROUNDS[0];
+}
+
+function normalizeScreenValue(screen) {
+  if (NAVIGATOR_SEQUENCE.includes(screen)) return screen;
+  if (screen === "navigation") return INTRO_SCREEN_BY_ROUND[1];
+  return normalizeRoundNumber(screen);
+}
+
+function isIntroScreen(screen) {
+  return typeof screen === "string" && screen in ROUND_BY_INTRO_SCREEN;
+}
+
+function getRoundNumberForScreen(screen) {
+  if (isIntroScreen(screen)) return ROUND_BY_INTRO_SCREEN[screen];
+  return normalizeRoundNumber(screen);
+}
+
+function applyQuestionTimerMigration(items) {
+  return items.map((item) => ({
+    ...item,
+    content: {
+      ...(item.content ?? {}),
+      timerSeconds: QUESTION_TIMER_SECONDS,
+    },
+  }));
 }
 
 function hydrateState(parsed) {
   const base = createDefaultState();
   if (!parsed || typeof parsed !== "object") return base;
+  const requiresTimerMigration = Number(parsed.schemaVersion || 0) < 5;
 
   const teams = Array.isArray(parsed.teams)
     ? base.teams.map((team, index) => ({
@@ -231,10 +471,14 @@ function hydrateState(parsed) {
       }))
     : base.teams;
 
-  const round1Cells = Array.isArray(parsed.round1?.cells)
+  let round1Cells = Array.isArray(parsed.round1?.cells)
     ? base.round1.cells.map((cell, index) => ({
         ...cell,
         ...(parsed.round1.cells[index] ?? {}),
+        typeVisible:
+          typeof parsed.round1.cells[index]?.typeVisible === "boolean"
+            ? parsed.round1.cells[index].typeVisible
+            : Boolean(parsed.round1.cells[index]?.revealType),
         content: {
           ...cell.content,
           ...(parsed.round1.cells[index]?.content ?? {}),
@@ -242,7 +486,7 @@ function hydrateState(parsed) {
       }))
     : base.round1.cells;
 
-  const round2Rows = Array.isArray(parsed.round2?.rows)
+  let round2Rows = Array.isArray(parsed.round2?.rows)
     ? base.round2.rows.map((row, index) => ({
         ...row,
         ...(parsed.round2.rows[index] ?? {}),
@@ -253,25 +497,39 @@ function hydrateState(parsed) {
       }))
     : base.round2.rows;
 
-  const round3Packs = Array.isArray(parsed.round3?.packs)
-    ? base.round3.packs.map((pack, packIndex) => ({
-        ...pack,
-        ...(parsed.round3.packs[packIndex] ?? {}),
-        questions: base.round3.packs[packIndex].questions.map((question, index) => ({
-          ...question,
-          ...(parsed.round3.packs[packIndex]?.questions?.[index] ?? {}),
-          content: {
-            ...question.content,
-            ...(parsed.round3.packs[packIndex]?.questions?.[index]?.content ?? {}),
-          },
-        })),
-      }))
-    : base.round3.packs;
+  let round3Packs = buildRound3Packs(parsed.round3?.packs, { preserveQuestionState: true });
+
+  if (requiresTimerMigration) {
+    round1Cells = applyQuestionTimerMigration(round1Cells);
+    round2Rows = applyQuestionTimerMigration(round2Rows);
+    round3Packs = round3Packs.map((pack) => ({
+      ...pack,
+      questions: applyQuestionTimerMigration(pack.questions),
+    }));
+  }
 
   return {
     ...base,
     ...parsed,
+    currentRound: normalizeScreenValue(
+      parsed.currentRound === "navigation"
+        ? INTRO_SCREEN_BY_ROUND[normalizeRoundNumber(parsed.roundIntro?.round ?? 1)]
+        : parsed.currentRound,
+    ),
+    showStandings: Boolean(parsed.showStandings),
     teams,
+    roundIntro: {
+      ...base.roundIntro,
+      ...(parsed.roundIntro ?? {}),
+      videos: {
+        ...base.roundIntro.videos,
+        ...(parsed.roundIntro?.videos ?? {}),
+      },
+    },
+    introPlayback: {
+      ...base.introPlayback,
+      ...(parsed.introPlayback ?? {}),
+    },
     presentation: {
       ...base.presentation,
       ...(parsed.presentation ?? {}),
@@ -311,22 +569,11 @@ function hydrateState(parsed) {
     round3: {
       ...base.round3,
       ...(parsed.round3 ?? {}),
+      selectedPack: normalizeRound3PackId(round3Packs, parsed.round3?.selectedPack ?? base.round3.selectedPack),
       packs: round3Packs,
       timer: {
         ...base.round3.timer,
         ...(parsed.round3?.timer ?? {}),
-      },
-    },
-    round4: {
-      ...base.round4,
-      ...(parsed.round4 ?? {}),
-      timer: {
-        ...base.round4.timer,
-        ...(parsed.round4?.timer ?? {}),
-      },
-      scores: {
-        ...base.round4.scores,
-        ...(parsed.round4?.scores ?? {}),
       },
     },
   };
@@ -348,10 +595,11 @@ let controlViewMode = "live";
 const sfx = IS_DISPLAY_MODE ? new SfxPlayer() : null;
 let lastSoundCueToken = null;
 let tickingAudioActive = false;
+let displayIntroAudioUnlocked = false;
 const editorState = {
   round1Index: 0,
   round2Index: 0,
-  round3PackId: state.round3?.selectedPack ?? "easy",
+  round3PackId: normalizeRound3PackId(state, state.round3?.selectedPack),
   round3Index: 0,
 };
 
@@ -427,7 +675,7 @@ function settleExpiredTimers() {
   const nextState = clone(state);
   let changed = false;
 
-  for (const timer of [nextState.round3.timer, nextState.round4.timer, nextState.presentation.timer]) {
+  for (const timer of [nextState.round3.timer, nextState.presentation.timer]) {
     const snapshot = getTimerSnapshot(timer);
     if (timer.running && snapshot.remainingMs <= 0) {
       timer.remainingMs = 0;
@@ -450,16 +698,16 @@ function formatClock(ms) {
 }
 
 function getCurrentRoundMeta() {
-  return ROUND_META[state.currentRound] ?? ROUND_META[1];
+  return ROUND_META[normalizeScreenValue(state.currentRound)] ?? ROUND_META[1];
 }
 
 function getVisibleRoundNumber(currentState = state) {
   const ref = currentState.presentation?.ref;
-  if (!currentState.presentation?.open || !ref) return currentState.currentRound;
+  if (!currentState.presentation?.open || !ref) return normalizeScreenValue(currentState.currentRound);
   if (ref.scope === "round1-cell") return 1;
   if (ref.scope === "round2-row") return 2;
   if (ref.scope === "round3-question") return 3;
-  return currentState.currentRound;
+  return normalizeScreenValue(currentState.currentRound);
 }
 
 function getVisibleRoundMeta(currentState = state) {
@@ -475,23 +723,31 @@ function getVisibleTeams() {
 }
 
 function getRound3Pack(packId = state.round3.selectedPack) {
-  return state.round3.packs.find((pack) => pack.id === packId) ?? state.round3.packs[0];
+  const normalizedPackId = normalizeRound3PackId(state, packId);
+  return state.round3.packs.find((pack) => pack.id === normalizedPackId) ?? state.round3.packs[0];
 }
 
-function getRound4TeamScore(teamId) {
-  return state.round4.scores[teamId] ?? { content: "", rebuttal: "", skill: "" };
+function getRound3PacksByType(typeId, currentState = state) {
+  const normalizedTypeId = normalizeRound3PackTypeId(typeId);
+  return currentState.round3.packs.filter((pack) => pack.typeId === normalizedTypeId);
 }
 
-function getRound4Total(teamId) {
-  const score = getRound4TeamScore(teamId);
-  return ["content", "rebuttal", "skill"].reduce((sum, key) => sum + Number(score[key] || 0), 0);
+function getRound3TypeLabel(typeId) {
+  return ROUND3_PACK_TYPES.find((packType) => packType.id === normalizeRound3PackTypeId(typeId))?.label ?? "";
+}
+
+function getRound3PackControlLabel(pack) {
+  if (!pack) return "";
+  return `${pack.label} · Goi ${Number(pack.slot)}`;
 }
 
 function getScopedItem(currentState, scope, index, packId = null) {
   if (scope === "round1-cell") return currentState.round1.cells[index] ?? null;
   if (scope === "round2-row") return currentState.round2.rows[index] ?? null;
   if (scope === "round3-question") {
-    const pack = currentState.round3.packs.find((item) => item.id === packId) ?? currentState.round3.packs[0];
+    const pack =
+      currentState.round3.packs.find((item) => item.id === normalizeRound3PackId(currentState, packId)) ??
+      currentState.round3.packs[0];
     return pack?.questions[index] ?? null;
   }
   return null;
@@ -614,7 +870,7 @@ function renderRound2CrosswordBoard(options = {}) {
 }
 
 function getSelectedRound3Pack() {
-  return state.round3.packs.find((pack) => pack.id === editorState.round3PackId) ?? state.round3.packs[0];
+  return getRound3Pack(editorState.round3PackId);
 }
 
 function getSelectedRound3Question() {
@@ -634,6 +890,7 @@ function getCurrentRound3PresentationRef(currentState = state) {
 }
 
 function setRound3LiveQuestion(draft, ref) {
+  ref.packId = normalizeRound3PackId(draft, ref.packId);
   const pack = draft.round3.packs.find((entry) => entry.id === ref.packId);
   const question = pack?.questions[ref.index];
   if (!question) return;
@@ -655,13 +912,16 @@ function setRound3LiveQuestion(draft, ref) {
   draft.presentation.timerVisible = true;
   draft.presentation.effect = null;
   draft.presentation.media = null;
+  draft.showStandings = false;
   draft.presentation.selectedChoiceIndex = -1;
   draft.presentation.typedResponse = "";
   draft.presentation.scoreTeamId = draft.currentTeamId;
 }
 
 function getNextRound3QuestionRef(currentState, packId = currentState.round3.selectedPack, fromIndex = -1) {
-  const pack = currentState.round3.packs.find((item) => item.id === packId) ?? currentState.round3.packs[0];
+  const pack =
+    currentState.round3.packs.find((item) => item.id === normalizeRound3PackId(currentState, packId)) ??
+    currentState.round3.packs[0];
   if (!pack) return null;
 
   const total = pack.questions.length;
@@ -703,7 +963,7 @@ function setNestedValue(target, path, value) {
 
 function normalizeFieldValue(field, value) {
   if (field === "revealType") return value || null;
-  if (field === "content.timerSeconds") return Math.max(5, Number(value || 30));
+  if (field === "content.timerSeconds") return Math.max(5, Number(value || QUESTION_TIMER_SECONDS));
   if (field === "startColumn") return clampInteger(value, 1, 20, 1);
   if (field === "gridColumns") return clampInteger(value, 8, 20, 14);
   if (field === "highlightColumn") return clampInteger(value, 1, 20, 7);
@@ -737,7 +997,7 @@ function setEditorSelection(scope, index, packId = null) {
     return;
   }
   if (scope === "round3-question") {
-    editorState.round3PackId = packId || editorState.round3PackId;
+    editorState.round3PackId = normalizeRound3PackId(state, packId || editorState.round3PackId);
     editorState.round3Index = index;
   }
 }
@@ -759,6 +1019,7 @@ function openPresentationForItem(draft, ref) {
     item.revealType = "question";
   }
 
+  draft.showStandings = false;
   draft.presentation.open = true;
   draft.presentation.ref = ref;
   draft.presentation.showAnswer = false;
@@ -770,7 +1031,7 @@ function openPresentationForItem(draft, ref) {
   if (ref.scope === "round3-question") {
     draft.presentation.scoreTeamId = draft.currentTeamId;
   }
-  draft.presentation.timer = createTimer(Math.max(5, Number(item.content?.timerSeconds || 30)) * 1000);
+  draft.presentation.timer = createTimer(Math.max(5, Number(item.content?.timerSeconds || QUESTION_TIMER_SECONDS)) * 1000);
 }
 
 function syncDisplayAudio(currentState = state) {
@@ -786,10 +1047,6 @@ function syncDisplayAudio(currentState = state) {
 function shouldPlayTickingAudio(currentState = state) {
   if (currentState.currentRound === 3 && getCurrentRound3PresentationRef(currentState)) {
     return getTimerSnapshot(currentState.round3.timer).running;
-  }
-
-  if (currentState.currentRound === 4) {
-    return getTimerSnapshot(currentState.round4.timer).running;
   }
 
   if (currentState.presentation.open && currentState.presentation.ref?.scope !== "round3-question") {
@@ -820,6 +1077,8 @@ function syncPresentationMediaPlayback() {
 
   document.querySelectorAll(".presentation-video").forEach((node) => {
     if (!(node instanceof HTMLVideoElement)) return;
+    if (node.dataset.introScreen) return;
+    if (node.dataset.autoPlay !== "true") return;
     node.defaultMuted = false;
     node.muted = false;
     node.volume = 1;
@@ -827,6 +1086,60 @@ function syncPresentationMediaPlayback() {
       node.play().catch(() => {});
     }
   });
+
+  document.querySelectorAll(".round-intro-video").forEach((node) => {
+    if (!(node instanceof HTMLVideoElement)) return;
+    const introScreen = node.dataset.introScreen;
+    const token = state.introPlayback?.screen === introScreen ? state.introPlayback.token : null;
+    const renderedToken = node.dataset.introToken || "";
+
+    if (!token || renderedToken !== token || node.dataset.playbackToken === token) return;
+
+    node.dataset.playbackToken = token;
+    node.defaultMuted = !displayIntroAudioUnlocked;
+    node.muted = !displayIntroAudioUnlocked;
+    node.pause();
+    try {
+      node.currentTime = 0;
+    } catch {}
+
+    const tryPlay = () => {
+      const autoplayAttempt = node.play();
+      if (typeof autoplayAttempt?.catch === "function") {
+        autoplayAttempt.catch(() => {});
+      }
+    };
+
+    if (node.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      tryPlay();
+      return;
+    }
+
+    const handleReady = () => {
+      tryPlay();
+    };
+
+    node.addEventListener("loadeddata", handleReady, { once: true });
+    node.addEventListener("canplay", handleReady, { once: true });
+    node.load();
+  });
+}
+
+function unlockDisplayIntroAudio() {
+  if (!IS_DISPLAY_MODE) return;
+  displayIntroAudioUnlocked = true;
+
+  document.querySelectorAll(".round-intro-video").forEach((node) => {
+    if (!(node instanceof HTMLVideoElement)) return;
+    node.defaultMuted = false;
+    node.muted = false;
+    const autoplayAttempt = node.play();
+    if (typeof autoplayAttempt?.catch === "function") {
+      autoplayAttempt.catch(() => {});
+    }
+  });
+
+  render();
 }
 
 function renderQuickScoreButtons() {
@@ -838,6 +1151,16 @@ function renderQuickScoreButtons() {
       <button class="small-btn danger" data-action="presentation-adjust-score" data-delta="-20">-20</button>
     </div>
   `;
+}
+
+function getCurrentRoundIntroVideo(currentState = state) {
+  const roundNumber = getRoundNumberForScreen(currentState.currentRound);
+  const configuredVideo = currentState.roundIntro?.videos?.[roundNumber];
+  return {
+    ...createRoundIntroVideo(roundNumber),
+    ...(configuredVideo ?? {}),
+    src: String(configuredVideo?.src ?? "").trim() || `./assets/media/round${roundNumber}.mp4`,
+  };
 }
 
 function renderCurrentTeamSummary() {
@@ -1020,7 +1343,7 @@ function renderQuestionEditor(scope, index, item, packId = "") {
         </label>
         <label class="field-label">
           <span>Timer seconds</span>
-          <input class="number-input" type="number" min="5" value="${Number(content.timerSeconds || 30)}" data-action="set-item-field" data-field="content.timerSeconds" ${dataAttrs}>
+          <input class="number-input" type="number" min="5" value="${Number(content.timerSeconds || QUESTION_TIMER_SECONDS)}" data-action="set-item-field" data-field="content.timerSeconds" ${dataAttrs}>
         </label>
       </div>
 
@@ -1180,6 +1503,8 @@ function renderControlApp() {
 }
 
 function renderRoundSwitcherCard() {
+  const activeScreen = normalizeScreenValue(state.currentRound);
+
   return `
     <section class="admin-card round-switcher-card compact-card">
       <div class="panel-heading">
@@ -1189,21 +1514,20 @@ function renderRoundSwitcherCard() {
         </div>
       </div>
       <div class="round-switcher">
-        ${Object.entries(ROUND_META)
-          .map(
-            ([roundNumber, meta]) => `
-              <button
-                class="round-tab ${Number(roundNumber) === state.currentRound ? "active" : ""}"
-                data-action="switch-round"
-                data-round="${roundNumber}"
-              >
-                <span>${esc(meta.short)}</span>
-                <strong>${esc(meta.title)}</strong>
-              </button>
-            `,
-          )
-          .join("")}
+        ${NAVIGATOR_SEQUENCE.map(
+          (screenKey) => `
+            <button
+              class="round-tab ${screenKey === activeScreen ? "active" : ""}"
+              data-action="switch-round"
+              data-round="${screenKey}"
+            >
+              <span>${esc(ROUND_META[screenKey].short)}</span>
+              <strong>${esc(ROUND_META[screenKey].title)}</strong>
+            </button>
+          `,
+        ).join("")}
       </div>
+
     </section>
   `;
 }
@@ -1232,6 +1556,14 @@ function renderLiveWorkspace() {
             <div>
               <div class="eyebrow">Shared system</div>
               <h2 class="panel-title">Team Manager</h2>
+            </div>
+            <div class="inline-action-row">
+              <button class="small-btn ${state.showStandings ? "active" : ""}" data-action="show-standings-screen">
+                Show standings
+              </button>
+              <button class="small-btn subtle" data-action="hide-standings-screen">
+                Return to round
+              </button>
             </div>
           </div>
           <div class="team-admin-grid">
@@ -1268,7 +1600,32 @@ function renderQuestionBankWorkspace() {
 }
 
 function renderProjectorApp(embedded) {
+  const activeScreen = normalizeScreenValue(state.currentRound);
   const roundMeta = getVisibleRoundMeta();
+  const isNavigationScreen =
+    isIntroScreen(activeScreen) &&
+    !state.showStandings &&
+    (!state.presentation.open || !state.presentation.ref);
+
+  if (isNavigationScreen) {
+    return `
+      <div class="projector-shell ${embedded ? "embedded" : "fullscreen"} navigation-screen-shell">
+        <main class="projector-main navigation-screen-main">
+          ${renderRoundIntroScreen()}
+        </main>
+      </div>
+    `;
+  }
+
+  if (state.showStandings) {
+    return `
+      <div class="projector-shell ${embedded ? "embedded" : "fullscreen"} standings-screen-shell">
+        <main class="projector-main standings-screen-main">
+          ${renderStandingsScreen()}
+        </main>
+      </div>
+    `;
+  }
 
   return `
     <div class="projector-shell ${embedded ? "embedded" : "fullscreen"}">
@@ -1281,7 +1638,11 @@ function renderProjectorApp(embedded) {
       </header>
 
       <main class="projector-main">
-        ${state.presentation.open && state.presentation.ref?.scope !== "round3-question" ? renderPresentationScreen() : renderRoundDisplay()}
+        ${
+          state.presentation.open && state.presentation.ref?.scope !== "round3-question"
+              ? renderPresentationScreen()
+              : renderRoundDisplay()
+        }
       </main>
 
       <footer class="score-dock">
@@ -1290,6 +1651,93 @@ function renderProjectorApp(embedded) {
           .join("")}
       </footer>
     </div>
+  `;
+}
+
+function renderStandingsScreen() {
+  const rankedTeams = [...getVisibleTeams()].sort((left, right) => {
+    if (right.score !== left.score) return Number(right.score) - Number(left.score);
+    return String(left.name).localeCompare(String(right.name));
+  });
+
+  return `
+    <section class="round-display standings-display">
+      <div class="standings-hero">
+        <div class="banner-label">Standings</div>
+        <div class="standings-hero-title">Bang xep hang hien tai</div>
+        <div class="standings-hero-subtitle">Tong diem cac doi dang duoc dong bo theo thoi gian thuc.</div>
+      </div>
+
+      <div class="standings-grid enhanced">
+        ${rankedTeams
+          .map(
+            (team, index) => `
+              <article class="standings-card ${state.currentTeamId === team.id ? "active" : ""} ${index === 0 ? "leader" : ""}">
+                <div class="standings-rank">#${index + 1}</div>
+                <div class="standings-name">${esc(team.name)}</div>
+                <div class="standings-score">${Number(team.score)}</div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRoundIntroScreen() {
+  const screen = normalizeScreenValue(state.currentRound);
+  const roundNumber = getRoundNumberForScreen(screen);
+  const introVideo = getCurrentRoundIntroVideo();
+  const src = String(introVideo.src ?? "").trim();
+  const playbackToken = state.introPlayback?.screen === screen ? state.introPlayback.token ?? "" : "";
+
+  if (!IS_DISPLAY_MODE) {
+    return `
+      <section class="presentation-stage round-intro-stage">
+        <div class="round-intro-placeholder">
+          <div class="banner-label">Projector intro</div>
+          <div class="banner-value">Click the intro tab in Round Navigator to play ./assets/media/round${roundNumber}.mp4 on the projector.</div>
+        </div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="presentation-stage round-intro-stage full-intro-video-stage">
+      ${
+        src
+          ? `
+            <div class="presentation-video-frame round-intro-video-frame">
+              <video
+                class="presentation-video round-intro-video"
+                src="${esc(src)}"
+                autoplay
+                ${displayIntroAudioUnlocked ? "" : "muted"}
+                playsinline
+                preload="auto"
+                data-intro-screen="${esc(screen)}"
+                data-intro-token="${esc(playbackToken)}"
+              ></video>
+              ${
+                displayIntroAudioUnlocked
+                  ? ""
+                  : `
+                    <button class="intro-audio-unlock" type="button" data-action="unlock-intro-audio">
+                      Enable intro audio
+                    </button>
+                  `
+              }
+            </div>
+          `
+          : `
+            <div class="round-intro-placeholder">
+              <div class="banner-label">Video missing</div>
+              <div class="banner-value">Expected file: ./assets/media/round${roundNumber}.mp4</div>
+            </div>
+          `
+      }
+    </section>
   `;
 }
 
@@ -1473,23 +1921,6 @@ function renderTeamAdminCard(team) {
           data-team-id="${team.id}"
         >
       </label>
-
-      <div class="checklist-grid">
-        ${TEAM_CARD_OPTIONS.map(
-          (card) => `
-            <label class="check-pill ${team.cards[card.id] ? "active" : ""}">
-              <input
-                type="checkbox"
-                ${team.cards[card.id] ? "checked" : ""}
-                data-action="toggle-team-card"
-                data-team-id="${team.id}"
-                data-card-id="${card.id}"
-              >
-              <span>${esc(card.label)}</span>
-            </label>
-          `,
-        ).join("")}
-      </div>
     </article>
   `;
 }
@@ -1499,15 +1930,6 @@ function renderProjectorTeamCard(team) {
     <article class="score-team-card ${state.currentTeamId === team.id ? "active" : ""}">
       <div class="score-team-name">${esc(team.name)}</div>
       <div class="score-team-points">${Number(team.score)}</div>
-      <div class="score-team-functions">
-        ${TEAM_CARD_OPTIONS.map(
-          (card) => `
-            <span class="function-chip ${team.cards[card.id] ? "active" : ""}">
-              ${esc(card.label)}
-            </span>
-          `,
-        ).join("")}
-      </div>
     </article>
   `;
 }
@@ -1572,9 +1994,9 @@ function renderPresentationScreen() {
           <video
             class="presentation-video"
             src="./assets/media/get_help.mp4"
-            autoplay
             playsinline
             preload="auto"
+            data-auto-play="true"
           ></video>
         </div>
       </section>
@@ -1590,9 +2012,9 @@ function renderPresentationScreen() {
           <video
             class="presentation-video bomb-video"
             src="./assets/media/explosion.mp4"
-            autoplay
             playsinline
             preload="auto"
+            data-auto-play="true"
           ></video>
         </div>
       </section>
@@ -1605,10 +2027,10 @@ function renderPresentationScreen() {
     return `
       <section class="presentation-stage round3-presentation-stage">
         <div class="round-three-top">
-          ${state.round3.packs
+          ${ROUND3_PACK_TYPES
             .map(
               (roundPack) => `
-                <article class="pack-card ${roundPack.id === pack.id ? "active" : ""}">
+                <article class="pack-card ${roundPack.id === pack.typeId ? "active" : ""}">
                   <span>${esc(roundPack.label)}</span>
                 </article>
               `,
@@ -1742,37 +2164,50 @@ function renderRoundAdminPanel() {
   return renderLiveRoundAdminPanel();
 }
 
-function renderLiveRoundAdminPanel() {
-  if (state.currentRound === 1) return renderRound1LiveAdmin();
-  if (state.currentRound === 2) return renderRound2LiveAdmin();
-  if (state.currentRound === 3) return renderRound3LiveAdmin();
-  return renderRound4Admin();
-}
+function renderNavigationAdmin() {
+  const activeScreen = normalizeScreenValue(state.currentRound);
+  const roundNumber = getRoundNumberForScreen(activeScreen);
 
-function renderQuestionBankPanel() {
-  if (state.currentRound === 1) return renderRound1Admin();
-  if (state.currentRound === 2) return renderRound2Admin();
-  if (state.currentRound === 3) return renderRound3Admin();
   return `
     <section class="admin-card">
       <div class="panel-heading">
         <div>
-          <div class="eyebrow">Round 4 setup</div>
-          <h2 class="panel-title">No question bank for this round</h2>
+          <div class="eyebrow">Intro screen</div>
+          <h2 class="panel-title">${esc(ROUND_META[activeScreen]?.title ?? "Intro")}</h2>
         </div>
       </div>
-      <div class="status-empty">
-        Round 4 is operated live only. Use Live Control to manage finalists, stage timer and judge scores.
+
+      <div class="stacked-block">
+        <div class="status-empty">
+          Clicking this intro tab in Round Navigator will play <strong>./assets/media/round${roundNumber}.mp4</strong> on the projector.
+        </div>
       </div>
     </section>
   `;
 }
 
+function renderLiveRoundAdminPanel() {
+  if (isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (state.currentRound === 1) return renderRound1LiveAdmin();
+  if (state.currentRound === 2) return renderRound2LiveAdmin();
+  if (state.currentRound === 3) return renderRound3LiveAdmin();
+  return renderRound1LiveAdmin();
+}
+
+function renderQuestionBankPanel() {
+  if (isIntroScreen(state.currentRound)) return renderNavigationAdmin();
+  if (state.currentRound === 1) return renderRound1Admin();
+  if (state.currentRound === 2) return renderRound2Admin();
+  if (state.currentRound === 3) return renderRound3Admin();
+  return renderRound1Admin();
+}
+
 function renderRoundDisplay() {
+  if (isIntroScreen(state.currentRound)) return renderRoundIntroScreen();
   if (state.currentRound === 1) return renderRound1Display();
   if (state.currentRound === 2) return renderRound2Display();
   if (state.currentRound === 3) return renderRound3Display();
-  return renderRound4Display();
+  return renderRound1Display();
 }
 
 function renderRound1Admin() {
@@ -1868,7 +2303,7 @@ function renderRound1LiveAdmin() {
           .map(
             (cell, index) => `
               <article
-                class="live-round-card ${cell.revealType ? "revealed" : "hidden-card"}"
+                class="live-round-card ${cell.typeVisible && cell.revealType ? "revealed" : "hidden-card"}"
                 data-action="open-item-screen"
                 data-scope="round1-cell"
                 data-index="${index}"
@@ -1881,7 +2316,19 @@ function renderRound1LiveAdmin() {
                 </div>
                 <div class="inline-action-row">
                   <button class="small-btn" data-action="edit-bank-item" data-scope="round1-cell" data-index="${index}">Edit content</button>
-                  ${cell.revealType ? `<button class="small-btn subtle" data-action="round1-clear" data-index="${index}">Hide type</button>` : ""}
+                  ${
+                    cell.revealType
+                      ? `
+                        <button
+                          class="small-btn subtle"
+                          data-action="${cell.typeVisible ? "round1-hide-type" : "round1-show-type"}"
+                          data-index="${index}"
+                        >
+                          ${cell.typeVisible ? "Hide type" : "Show type"}
+                        </button>
+                      `
+                      : ""
+                  }
                 </div>
               </article>
             `,
@@ -1898,9 +2345,9 @@ function renderRound1Display() {
       <div class="r1-grid">
         ${state.round1.cells
           .map((cell) => {
-            const reveal = cell.revealType ? ROUND1_REVEALS[cell.revealType] : null;
+            const reveal = cell.typeVisible && cell.revealType ? ROUND1_REVEALS[cell.revealType] : null;
             return `
-              <article class="r1-cell ${cell.revealType ? `revealed ${cell.revealType}` : ""}">
+              <article class="r1-cell ${reveal ? `revealed ${cell.revealType}` : ""}">
                 ${
                   reveal
                     ? `
@@ -2154,7 +2601,6 @@ function renderRound2Display() {
         label: status === "shield" ? "La chan" : "Phan doi",
       }));
   });
-  const visibleHints = state.round2.centerHints.slice(0, state.round2.revealedHintCount);
   const centerAnswer = getRound2CenterAnswer();
   const hiddenLength = Math.max(1, centerAnswer.length || state.round2.rows.length);
   const centerChars = Array.from(state.round2.showCenterAnswer ? centerAnswer || "?" : "?".repeat(hiddenLength));
@@ -2173,27 +2619,6 @@ function renderRound2Display() {
             <div class="center-answer ${state.round2.showCenterAnswer ? "revealed" : ""}">
               ${centerChars.map((char) => `<span class="center-answer-cell">${esc(char)}</span>`).join("")}
             </div>
-            ${
-              visibleHints.length
-                ? `
-                  <div class="keyword-cloud">
-                    ${visibleHints.map((hint) => `<span class="keyword-chip">${esc(hint)}</span>`).join("")}
-                  </div>
-                `
-                : ""
-            }
-
-            ${
-              state.round2.seeFuture.visible
-                ? `
-                  <div class="see-future-card">
-                    <div class="see-future-kicker">See the Future</div>
-                    <strong>${esc(findTeam(state.round2.seeFuture.teamId)?.name ?? "Doi")}</strong>
-                    <p>${esc(state.round2.seeFuture.hint)}</p>
-                  </div>
-                `
-                : ""
-            }
           </div>
 
           <div class="projector-panel r2-status-panel">
@@ -2214,19 +2639,6 @@ function renderRound2Display() {
             }
           </div>
         </div>
-      </div>
-
-      <div class="r2-clue-strip">
-        ${state.round2.rows
-          .map(
-            (row) => `
-              <article class="r2-clue-card ${row.opened ? "opened" : ""}">
-                <div class="r2-clue-order">Hang ${row.number}</div>
-                <div class="r2-clue-text">${row.opened ? esc(row.clue) : "..."}</div>
-              </article>
-            `,
-          )
-          .join("")}
       </div>
     </section>
   `;
@@ -2352,6 +2764,7 @@ function renderRound3Admin() {
   const pack = getSelectedRound3Pack();
   const timer = getTimerSnapshot(state.round3.timer);
   const selectedQuestion = getSelectedRound3Question();
+  const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
 
   return `
     <section class="admin-card">
@@ -2363,15 +2776,31 @@ function renderRound3Admin() {
       </div>
 
       <div class="pack-button-row">
-        ${state.round3.packs
+        ${ROUND3_PACK_TYPES
           .map(
             (roundPack) => `
               <button
-                class="pack-pill ${roundPack.id === state.round3.selectedPack ? "active" : ""}"
+                class="pack-pill ${roundPack.id === selectedTypeId ? "active" : ""}"
+                data-action="round3-select-pack-type"
+                data-pack-type="${roundPack.id}"
+              >
+                ${esc(roundPack.label)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="pack-button-row">
+        ${getRound3PacksByType(selectedTypeId)
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === pack.id ? "active" : ""}"
                 data-action="round3-select-pack"
                 data-pack-id="${roundPack.id}"
               >
-                ${esc(roundPack.label)}
+                Goi ${Number(roundPack.slot)}
               </button>
             `,
           )
@@ -2504,14 +2933,15 @@ function renderRound3Display() {
   const pack = getRound3Pack(currentRef?.packId ?? state.round3.selectedPack);
   const timer = getTimerSnapshot(state.round3.timer);
   const currentQuestion = currentRef ? getScopedItem(state, currentRef.scope, currentRef.index, currentRef.packId) : null;
+  const activeTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
 
   return `
     <section class="round-display round-three-display">
       <div class="round-three-top">
-        ${state.round3.packs
+        ${ROUND3_PACK_TYPES
           .map(
             (roundPack) => `
-              <article class="pack-card ${roundPack.id === state.round3.selectedPack ? "active" : ""}">
+              <article class="pack-card ${roundPack.id === activeTypeId ? "active" : ""}">
                 <span>${esc(roundPack.label)}</span>
               </article>
             `,
@@ -2647,6 +3077,7 @@ function renderRound3LiveAdmin() {
   const currentRef = getCurrentRound3PresentationRef();
   const currentQuestion = currentRef ? getScopedItem(state, currentRef.scope, currentRef.index, currentRef.packId) : null;
   const currentPack = currentRef ? getRound3Pack(currentRef.packId) : pack;
+  const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
 
   return `
     <section class="admin-card">
@@ -2659,15 +3090,31 @@ function renderRound3LiveAdmin() {
       </div>
 
       <div class="pack-button-row">
-        ${state.round3.packs
+        ${ROUND3_PACK_TYPES
           .map(
             (roundPack) => `
               <button
-                class="pack-pill ${roundPack.id === state.round3.selectedPack ? "active" : ""}"
+                class="pack-pill ${roundPack.id === selectedTypeId ? "active" : ""}"
+                data-action="round3-select-pack-type"
+                data-pack-type="${roundPack.id}"
+              >
+                ${esc(roundPack.label)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="pack-button-row">
+        ${getRound3PacksByType(selectedTypeId)
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === pack.id ? "active" : ""}"
                 data-action="round3-select-pack"
                 data-pack-id="${roundPack.id}"
               >
-                ${esc(roundPack.label)}
+                Goi ${Number(roundPack.slot)}
               </button>
             `,
           )
@@ -2777,156 +3224,9 @@ function renderRound3LiveAdmin() {
   `;
 }
 
-function renderRound4Admin() {
-  const timer = getTimerSnapshot(state.round4.timer);
-
-  return `
-    <section class="admin-card">
-      <div class="panel-heading">
-        <div>
-          <div class="eyebrow">Round 4 control</div>
-          <h2 class="panel-title">Hung bien final</h2>
-        </div>
-      </div>
-
-      <div class="dual-form-grid compact">
-        ${[0, 1]
-          .map(
-            (slot) => `
-              <label class="field-label">
-                <span>${slot === 0 ? "Doi A" : "Doi B"}</span>
-                <select class="select-input" data-action="round4-set-finalist" data-slot="${slot}">
-                  ${state.teams
-                    .map(
-                      (team) => `
-                        <option value="${team.id}" ${state.round4.finalists[slot] === team.id ? "selected" : ""}>
-                          ${esc(team.name)}
-                        </option>
-                      `,
-                    )
-                    .join("")}
-                </select>
-              </label>
-            `,
-          )
-          .join("")}
-      </div>
-
-      <div class="panel-heading minor">
-        <div>
-          <div class="eyebrow">Stage control</div>
-          <h3 class="panel-title">Chuyen giai doan</h3>
-        </div>
-      </div>
-      <div class="pack-button-row">
-        ${Object.entries(ROUND4_STAGE_META)
-          .map(
-            ([stageId, meta]) => `
-              <button
-                class="pack-pill ${state.round4.currentStage === stageId ? "active" : ""}"
-                data-action="round4-set-stage"
-                data-stage="${stageId}"
-              >
-                ${esc(meta.label)}
-              </button>
-            `,
-          )
-          .join("")}
-      </div>
-
-      <div class="timer-admin-card">
-        <div class="timer-readout">
-          <span>Dong ho stage</span>
-          <strong data-bind-timer="round4">${formatClock(timer.remainingMs)}</strong>
-        </div>
-        <div class="inline-action-row">
-          <button class="small-btn" data-action="timer-start" data-timer="round4">Start</button>
-          <button class="small-btn" data-action="timer-pause" data-timer="round4">Pause</button>
-          <button class="small-btn subtle" data-action="timer-reset" data-timer="round4">Reset stage</button>
-        </div>
-      </div>
-
-      <div class="admin-divider"></div>
-
-      <div class="final-score-grid">
-        ${state.round4.finalists
-          .map((teamId, slot) => {
-            const team = findTeam(teamId);
-            const score = getRound4TeamScore(teamId);
-            return `
-              <article class="final-score-card">
-                <h3>${esc(team?.name ?? `Doi ${slot + 1}`)}</h3>
-                ${["content", "rebuttal", "skill"]
-                  .map(
-                    (key) => `
-                      <label class="field-label">
-                        <span>${
-                          key === "content" ? "Noi dung" : key === "rebuttal" ? "Phan bien" : "Ky nang"
-                        }</span>
-                        <input
-                          class="number-input"
-                          type="number"
-                          value="${esc(score[key])}"
-                          data-action="round4-set-score"
-                          data-team-id="${teamId}"
-                          data-score-key="${key}"
-                        >
-                      </label>
-                    `,
-                  )
-                  .join("")}
-                <div class="score-total-line">Tong hien thi: <strong>${getRound4Total(teamId)}</strong></div>
-              </article>
-            `;
-          })
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderRound4Display() {
-  const timer = getTimerSnapshot(state.round4.timer);
-  const currentStageMeta = ROUND4_STAGE_META[state.round4.currentStage] ?? ROUND4_STAGE_META.opening;
-
-  return `
-    <section class="round-display round-four-display">
-      <div class="hero-timer-card final">
-        <div class="hero-timer-label">Giai doan hien tai</div>
-        <div class="stage-name">${esc(currentStageMeta.label)}</div>
-        <div class="hero-timer-value" data-bind-timer="round4">${formatClock(timer.remainingMs)}</div>
-        <div class="timer-bar">
-          <div class="timer-bar-fill" data-bind-progress="round4"></div>
-        </div>
-      </div>
-
-      <div class="final-duel-grid">
-        ${state.round4.finalists
-          .map((teamId) => {
-            const team = findTeam(teamId);
-            const score = getRound4TeamScore(teamId);
-            return `
-              <article class="finalist-card">
-                <div class="finalist-name">${esc(team?.name ?? teamId)}</div>
-                <div class="final-score-list">
-                  <div><span>Noi dung</span><strong>${Number(score.content || 0)}</strong></div>
-                  <div><span>Phan bien</span><strong>${Number(score.rebuttal || 0)}</strong></div>
-                  <div><span>Ky nang</span><strong>${Number(score.skill || 0)}</strong></div>
-                </div>
-                <div class="final-total">Tong: ${getRound4Total(teamId)}</div>
-              </article>
-            `;
-          })
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
 function syncTimerBindings() {
   const bindings = {
     round3: getTimerSnapshot(state.round3.timer),
-    round4: getTimerSnapshot(state.round4.timer),
     presentation: getTimerSnapshot(state.presentation.timer),
   };
 
@@ -2955,6 +3255,11 @@ function handleClick(actionNode) {
   const action = actionNode.dataset.action;
   if (!action) return;
 
+  if (action === "unlock-intro-audio") {
+    unlockDisplayIntroAudio();
+    return;
+  }
+
   if (action === "open-display") {
     openDisplayWindow();
     return;
@@ -2964,9 +3269,9 @@ function handleClick(actionNode) {
     if (window.confirm("Reset to a fresh Minigame 2 state?")) {
       editorState.round1Index = 0;
       editorState.round2Index = 0;
-      editorState.round3PackId = "easy";
+      editorState.round3PackId = createRound3PackId("easy", 1);
       editorState.round3Index = 0;
-      applyState(createDefaultState());
+      applyState(createResetStatePreservingContent(state));
     }
     return;
   }
@@ -3066,18 +3371,43 @@ function handleClick(actionNode) {
     updateState((draft) => {
       const team = draft.teams.find((entry) => entry.id === draft.currentTeamId);
       if (team) team.score = Number(team.score) + Number(actionNode.dataset.delta || 0);
-      queueSoundCue(draft, Number(actionNode.dataset.delta || 0) >= 0 ? "sfx_score_up" : "sfx_score_down");
     });
     return;
   }
 
   if (action === "switch-round") {
-    const round = Number(actionNode.dataset.round);
-    if (round >= 1 && round <= 4) {
+    const screen = normalizeScreenValue(actionNode.dataset.round);
+    if (NAVIGATOR_SEQUENCE.includes(screen)) {
       updateState((draft) => {
-        draft.currentRound = round;
+        draft.currentRound = screen;
+        pauseTimer(draft.round3.timer);
+        draft.showStandings = false;
+        draft.introPlayback = isIntroScreen(screen)
+          ? {
+              screen,
+              token: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            }
+          : createIntroPlaybackState();
+        draft.presentation = createPresentationState();
       });
     }
+    return;
+  }
+
+  if (action === "show-standings-screen") {
+    updateState((draft) => {
+      pauseTimer(draft.round3.timer);
+      draft.showStandings = true;
+      draft.introPlayback = createIntroPlaybackState();
+      draft.presentation = createPresentationState();
+    });
+    return;
+  }
+
+  if (action === "hide-standings-screen") {
+    updateState((draft) => {
+      draft.showStandings = false;
+    });
     return;
   }
 
@@ -3103,7 +3433,11 @@ function handleClick(actionNode) {
   if (action === "round1-reveal") {
     updateState((draft) => {
       const cell = draft.round1.cells[Number(actionNode.dataset.index)];
-      if (cell) cell.revealType = actionNode.dataset.kind || null;
+      if (!cell) return;
+      cell.revealType = actionNode.dataset.kind || null;
+      if (!cell.revealType) {
+        cell.typeVisible = false;
+      }
     });
     return;
   }
@@ -3113,6 +3447,25 @@ function handleClick(actionNode) {
       const cell = draft.round1.cells[Number(actionNode.dataset.index)];
       if (!cell) return;
       cell.revealType = null;
+      cell.typeVisible = false;
+    });
+    return;
+  }
+
+  if (action === "round1-show-type") {
+    updateState((draft) => {
+      const cell = draft.round1.cells[Number(actionNode.dataset.index)];
+      if (!cell || !cell.revealType) return;
+      cell.typeVisible = true;
+    });
+    return;
+  }
+
+  if (action === "round1-hide-type") {
+    updateState((draft) => {
+      const cell = draft.round1.cells[Number(actionNode.dataset.index)];
+      if (!cell) return;
+      cell.typeVisible = false;
     });
     return;
   }
@@ -3192,10 +3545,22 @@ function handleClick(actionNode) {
   }
 
   if (action === "round3-select-pack") {
-    editorState.round3PackId = actionNode.dataset.packId || editorState.round3PackId;
+    editorState.round3PackId = normalizeRound3PackId(state, actionNode.dataset.packId || editorState.round3PackId);
     editorState.round3Index = 0;
     updateState((draft) => {
-      draft.round3.selectedPack = actionNode.dataset.packId || draft.round3.selectedPack;
+      draft.round3.selectedPack = normalizeRound3PackId(draft, actionNode.dataset.packId || draft.round3.selectedPack);
+    });
+    return;
+  }
+
+  if (action === "round3-select-pack-type") {
+    const selectedSlot = getRound3PackSlot(editorState.round3PackId || state.round3.selectedPack);
+    const nextPackId = createRound3PackId(actionNode.dataset.packType, selectedSlot);
+
+    editorState.round3PackId = normalizeRound3PackId(state, nextPackId);
+    editorState.round3Index = 0;
+    updateState((draft) => {
+      draft.round3.selectedPack = normalizeRound3PackId(draft, nextPackId);
     });
     return;
   }
@@ -3216,7 +3581,11 @@ function handleClick(actionNode) {
 
   if (action === "round3-show-question") {
     updateState((draft) => {
-      const ref = createPresentationRef("round3-question", Number(actionNode.dataset.index), actionNode.dataset.packId || draft.round3.selectedPack);
+      const ref = createPresentationRef(
+        "round3-question",
+        Number(actionNode.dataset.index),
+        normalizeRound3PackId(draft, actionNode.dataset.packId || draft.round3.selectedPack),
+      );
       setRound3LiveQuestion(draft, ref);
     });
     return;
@@ -3281,10 +3650,12 @@ function handleClick(actionNode) {
   }
 
   if (action === "round3-set-question-status") {
-    editorState.round3PackId = actionNode.dataset.packId || editorState.round3PackId;
+    editorState.round3PackId = normalizeRound3PackId(state, actionNode.dataset.packId || editorState.round3PackId);
     editorState.round3Index = Number(actionNode.dataset.index);
     updateState((draft) => {
-      const pack = draft.round3.packs.find((item) => item.id === actionNode.dataset.packId);
+      const pack = draft.round3.packs.find(
+        (item) => item.id === normalizeRound3PackId(draft, actionNode.dataset.packId),
+      );
       const question = pack?.questions[Number(actionNode.dataset.index)];
       const nextStatus = actionNode.dataset.status;
       if (!question || !nextStatus) return;
@@ -3312,12 +3683,7 @@ function handleClick(actionNode) {
 
   if (action === "timer-start") {
     updateState((draft) => {
-      const timer =
-        actionNode.dataset.timer === "round4"
-          ? draft.round4.timer
-          : actionNode.dataset.timer === "presentation"
-            ? draft.presentation.timer
-            : draft.round3.timer;
+      const timer = actionNode.dataset.timer === "presentation" ? draft.presentation.timer : draft.round3.timer;
       startTimer(timer);
     });
     return;
@@ -3325,12 +3691,7 @@ function handleClick(actionNode) {
 
   if (action === "timer-pause") {
     updateState((draft) => {
-      const timer =
-        actionNode.dataset.timer === "round4"
-          ? draft.round4.timer
-          : actionNode.dataset.timer === "presentation"
-            ? draft.presentation.timer
-            : draft.round3.timer;
+      const timer = actionNode.dataset.timer === "presentation" ? draft.presentation.timer : draft.round3.timer;
       pauseTimer(timer);
     });
     return;
@@ -3338,27 +3699,14 @@ function handleClick(actionNode) {
 
   if (action === "timer-reset") {
     updateState((draft) => {
-      if (actionNode.dataset.timer === "round4") {
-        const stageMeta = ROUND4_STAGE_META[draft.round4.currentStage] ?? ROUND4_STAGE_META.opening;
-        resetTimer(draft.round4.timer, stageMeta.durationMs);
-      } else if (actionNode.dataset.timer === "presentation") {
+      if (actionNode.dataset.timer === "presentation") {
         const item = getCurrentPresentationItem(draft);
-        resetTimer(draft.presentation.timer, Math.max(5, Number(item?.content?.timerSeconds || 30)) * 1000);
+        resetTimer(draft.presentation.timer, Math.max(5, Number(item?.content?.timerSeconds || QUESTION_TIMER_SECONDS)) * 1000);
       } else {
         resetTimer(draft.round3.timer, 120_000);
       }
     });
     return;
-  }
-
-  if (action === "round4-set-stage") {
-    updateState((draft) => {
-      const stage = actionNode.dataset.stage;
-      const meta = ROUND4_STAGE_META[stage];
-      if (!meta) return;
-      draft.round4.currentStage = stage;
-      draft.round4.timer = createTimer(meta.durationMs);
-    });
   }
 }
 
@@ -3455,22 +3803,6 @@ function handleChange(target) {
       if (team && cardId) team.cards[cardId] = Boolean(target.checked);
     });
     return;
-  }
-
-  if (action === "round4-set-finalist") {
-    updateState((draft) => {
-      draft.round4.finalists[Number(target.dataset.slot)] = target.value;
-    });
-    return;
-  }
-
-  if (action === "round4-set-score") {
-    updateState((draft) => {
-      const teamId = target.dataset.teamId;
-      const scoreKey = target.dataset.scoreKey;
-      if (!teamId || !scoreKey) return;
-      draft.round4.scores[teamId][scoreKey] = target.value;
-    });
   }
 }
 
