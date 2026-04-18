@@ -89,11 +89,11 @@ const ROUND1_REVEALS = {
 };
 
 const ROUND3_PACK_TYPES = [
-  { id: "easy", label: "De" },
-  { id: "medium", label: "Trung binh" },
-  { id: "hard", label: "Kho" },
+  { id: "easy", label: "Dễ", variantCount: 2, basePoints: 5 },
+  { id: "medium", label: "Trung bình", variantCount: 1, basePoints: 7 },
+  { id: "hard", label: "Khó", variantCount: 1, basePoints: 10 },
 ];
-const ROUND3_PACK_VARIANTS = 4;
+const ROUND3_PACK_VARIANTS = Math.max(...ROUND3_PACK_TYPES.map((packType) => packType.variantCount));
 
 function esc(value) {
   return String(value ?? "")
@@ -205,6 +205,7 @@ function createRound2Row(index) {
     clue: `Goi y hang ngang ${index + 1}`,
     opened: false,
     answerWord: `HANG${index + 1}`,
+    highlightIndex: 1,
     startColumn: Math.max(1, 7 - Math.floor(`HANG${index + 1}`.length / 2)),
     content: createManualContent(`Hang ${index + 1}`, QUESTION_TIMER_SECONDS),
   };
@@ -228,12 +229,17 @@ function normalizeRound3PackTypeId(typeId) {
   return ROUND3_PACK_TYPES.some((packType) => packType.id === typeId) ? typeId : ROUND3_PACK_TYPES[0].id;
 }
 
+function getRound3PackType(typeId) {
+  return ROUND3_PACK_TYPES.find((packType) => packType.id === normalizeRound3PackTypeId(typeId)) ?? ROUND3_PACK_TYPES[0];
+}
+
 function getRound3PackTypeId(packId) {
   return normalizeRound3PackTypeId(String(packId ?? "").split("_")[0]);
 }
 
 function getRound3PackSlot(packId) {
-  return clampInteger(String(packId ?? "").split("_")[1], 1, ROUND3_PACK_VARIANTS, 1);
+  const typeId = getRound3PackTypeId(packId);
+  return clampInteger(String(packId ?? "").split("_")[1], 1, getRound3PackType(typeId).variantCount, 1);
 }
 
 function createRound3Pack(type, slot) {
@@ -242,13 +248,14 @@ function createRound3Pack(type, slot) {
     typeId: type.id,
     slot,
     label: type.label,
+    basePoints: Number(type.basePoints || 0),
     questions: Array.from({ length: 7 }, (_, index) => createRound3Question(index)),
   };
 }
 
 function createDefaultRound3Packs() {
   return ROUND3_PACK_TYPES.flatMap((type) =>
-    Array.from({ length: ROUND3_PACK_VARIANTS }, (_, index) => createRound3Pack(type, index + 1)),
+    Array.from({ length: type.variantCount }, (_, index) => createRound3Pack(type, index + 1)),
   );
 }
 
@@ -358,8 +365,8 @@ function createDefaultState() {
       correctPoints: 10,
       wrongPoints: 10,
       packs: createDefaultRound3Packs(),
-      armedTrap: null,
-      lastTrapAnnouncement: null,
+      bombVideoVisible: false,
+      bombVideoToken: null,
       timer: createTimer(120_000),
     },
   };
@@ -388,6 +395,7 @@ function createResetStatePreservingContent(currentState) {
     ...row,
     clue: currentState.round2?.rows?.[index]?.clue ?? row.clue,
     answerWord: currentState.round2?.rows?.[index]?.answerWord ?? row.answerWord,
+    highlightIndex: currentState.round2?.rows?.[index]?.highlightIndex ?? row.highlightIndex,
     startColumn: currentState.round2?.rows?.[index]?.startColumn ?? row.startColumn,
     content: {
       ...row.content,
@@ -396,10 +404,11 @@ function createResetStatePreservingContent(currentState) {
     },
   }));
 
-  const round3Packs = buildRound3Packs(currentState.round3?.packs).map((pack) => ({
+  const round3Packs = buildRound3Packs(currentState.round3?.packs).map((pack, packIndex) => ({
     ...pack,
-    questions: pack.questions.map((question) => ({
+    questions: pack.questions.map((question, questionIndex) => ({
       ...question,
+      trap: currentState.round3?.packs?.[packIndex]?.questions?.[questionIndex]?.trap ?? question.trap,
       content: {
         ...question.content,
         timerSeconds: QUESTION_TIMER_SECONDS,
@@ -437,8 +446,6 @@ function createResetStatePreservingContent(currentState) {
     },
     round3: {
       ...base.round3,
-      correctPoints: currentState.round3?.correctPoints ?? base.round3.correctPoints,
-      wrongPoints: currentState.round3?.wrongPoints ?? base.round3.wrongPoints,
       packs: round3Packs,
     },
   };
@@ -466,6 +473,7 @@ function createQuestionBankExport(currentState) {
       rows: currentState.round2.rows.map((row) => ({
         clue: row.clue,
         answerWord: row.answerWord,
+        highlightIndex: row.highlightIndex,
         startColumn: row.startColumn,
         content: clone(row.content),
       })),
@@ -475,8 +483,6 @@ function createQuestionBankExport(currentState) {
       },
     },
     round3: {
-      correctPoints: currentState.round3.correctPoints,
-      wrongPoints: currentState.round3.wrongPoints,
       packs: currentState.round3.packs.map((pack) => ({
         id: pack.id,
         typeId: pack.typeId,
@@ -484,6 +490,7 @@ function createQuestionBankExport(currentState) {
         label: pack.label,
         questions: pack.questions.map((question) => ({
           label: question.label,
+          trap: question.trap,
           content: clone(question.content),
         })),
       })),
@@ -526,6 +533,7 @@ function applyImportedQuestionBank(currentState, importedData) {
     ...row,
     clue: payload.round2?.rows?.[index]?.clue ?? row.clue,
     answerWord: payload.round2?.rows?.[index]?.answerWord ?? row.answerWord,
+    highlightIndex: payload.round2?.rows?.[index]?.highlightIndex ?? row.highlightIndex,
     startColumn: payload.round2?.rows?.[index]?.startColumn ?? row.startColumn,
     content: {
       ...row.content,
@@ -542,7 +550,10 @@ function applyImportedQuestionBank(currentState, importedData) {
     questions: pack.questions.map((question, questionIndex) => ({
       ...question,
       status: nextState.round3.packs[packIndex]?.questions?.[questionIndex]?.status ?? question.status,
-      trap: nextState.round3.packs[packIndex]?.questions?.[questionIndex]?.trap ?? question.trap,
+      trap:
+        payload.round3?.packs?.[packIndex]?.questions?.[questionIndex]?.trap ??
+        nextState.round3.packs[packIndex]?.questions?.[questionIndex]?.trap ??
+        question.trap,
       content: {
         ...question.content,
         timerSeconds: Math.max(5, Number(question.content?.timerSeconds || QUESTION_TIMER_SECONDS)),
@@ -579,8 +590,6 @@ function applyImportedQuestionBank(currentState, importedData) {
   };
   nextState.round3 = {
     ...nextState.round3,
-    correctPoints: payload.round3?.correctPoints ?? nextState.round3.correctPoints,
-    wrongPoints: payload.round3?.wrongPoints ?? nextState.round3.wrongPoints,
     packs: importedRound3Packs,
   };
   nextState.presentation = createPresentationState();
@@ -885,8 +894,18 @@ function formatClock(ms) {
   return `${minutes}:${seconds}`;
 }
 
+function withRoundMetaOverrides(meta, roundKey) {
+  if (roundKey !== 2) return meta;
+  return {
+    ...meta,
+    subtitle:
+      "Các đội lần lượt trả lời câu hỏi để thêm điểm. Sau mỗi lượt sẽ hiển thị một gợi ý, và đáp án bí ẩn cuối cùng được tạo từ 8 gợi ý đó, có dùng chữ cái của từng hàng.",
+  };
+}
+
 function getCurrentRoundMeta() {
-  return ROUND_META[normalizeScreenValue(state.currentRound)] ?? ROUND_META[1];
+  const roundKey = normalizeScreenValue(state.currentRound);
+  return withRoundMetaOverrides(ROUND_META[roundKey] ?? ROUND_META[1], roundKey);
 }
 
 function getVisibleRoundNumber(currentState = state) {
@@ -899,7 +918,8 @@ function getVisibleRoundNumber(currentState = state) {
 }
 
 function getVisibleRoundMeta(currentState = state) {
-  return ROUND_META[getVisibleRoundNumber(currentState)] ?? ROUND_META[1];
+  const roundKey = getVisibleRoundNumber(currentState);
+  return withRoundMetaOverrides(ROUND_META[roundKey] ?? ROUND_META[1], roundKey);
 }
 
 function findTeam(teamId) {
@@ -927,6 +947,23 @@ function getRound3TypeLabel(typeId) {
 function getRound3PackControlLabel(pack) {
   if (!pack) return "";
   return `${pack.label} · Goi ${Number(pack.slot)}`;
+}
+
+function getRound3PackBasePoints(packOrPackId, currentState = state) {
+  const pack =
+    typeof packOrPackId === "string"
+      ? currentState.round3.packs.find((item) => item.id === normalizeRound3PackId(currentState, packOrPackId))
+      : packOrPackId;
+  return Number(pack?.basePoints ?? getRound3PackType(pack?.typeId).basePoints ?? 0);
+}
+
+function getRound3QuestionPoints(packOrPackId, question = null, currentState = state) {
+  const basePoints = getRound3PackBasePoints(packOrPackId, currentState);
+  return question?.trap === "x2" ? basePoints * 2 : basePoints;
+}
+
+function getRound3WrongPoints(packOrPackId, currentState = state) {
+  return getRound3PackBasePoints(packOrPackId, currentState);
 }
 
 function getScopedItem(currentState, scope, index, packId = null) {
@@ -973,6 +1010,18 @@ function getRound2AnswerLetters(row) {
   return Array.from(String(row?.answerWord ?? "").trim().toUpperCase().replace(/\s+/g, ""));
 }
 
+function getRound2HighlightLetterIndex(row) {
+  const letters = getRound2AnswerLetters(row);
+  if (letters.length === 0) return -1;
+  return clampInteger(row?.highlightIndex, 1, letters.length, 1) - 1;
+}
+
+function getRound2HighlightedLetter(row) {
+  const letters = getRound2AnswerLetters(row);
+  const letterIndex = getRound2HighlightLetterIndex(row);
+  return letterIndex >= 0 ? letters[letterIndex] ?? "" : "";
+}
+
 function getRound2RowMetrics(row, currentState = state) {
   const gridColumns = getRound2GridColumns(currentState);
   const highlightColumn = getRound2HighlightColumn(currentState);
@@ -996,14 +1045,13 @@ function getRound2RowMetrics(row, currentState = state) {
 
 function getRound2DerivedCenterAnswer(currentState = state) {
   return currentState.round2.rows
-    .map((row) => getRound2RowMetrics(row, currentState).crossLetter)
+    .map((row) => getRound2HighlightedLetter(row))
     .filter(Boolean)
     .join("");
 }
 
 function getRound2CenterAnswer(currentState = state) {
-  const manual = String(currentState.round2.centerAnswer ?? "").trim().toUpperCase();
-  return manual || getRound2DerivedCenterAnswer(currentState);
+  return String(currentState.round2.centerAnswer ?? "").trim().toUpperCase();
 }
 
 function renderRound2CrosswordBoard(options = {}) {
@@ -1012,42 +1060,35 @@ function renderRound2CrosswordBoard(options = {}) {
     revealAll = false,
     selectedIndex = -1,
     compact = false,
+    showHighlights = false,
   } = options;
-  const gridColumns = getRound2GridColumns(currentState);
-  const highlightColumn = getRound2HighlightColumn(currentState);
 
   return `
-    <div class="round2-crossword-board ${compact ? "compact" : ""}" style="--round2-grid-columns:${gridColumns};">
+    <div class="round2-crossword-board round2-hint-board ${compact ? "compact" : ""}">
       ${currentState.round2.rows
         .map((row, index) => {
-          const metrics = getRound2RowMetrics(row, currentState);
+          const letters = getRound2AnswerLetters(row);
+          const showLetters = revealAll || row.opened;
+          const highlightLetterIndex = getRound2HighlightLetterIndex(row);
           return `
-            <div class="round2-grid-track ${row.opened ? "opened" : ""} ${selectedIndex === index ? "selected" : ""}">
+            <div class="round2-grid-track round2-hint-track ${row.opened ? "opened" : ""} ${selectedIndex === index ? "selected" : ""}">
               <div class="round2-grid-row-number">${row.number}</div>
-              <div class="round2-grid-cells">
-                ${Array.from({ length: gridColumns }, (_, columnIndex) => {
-                  const column = columnIndex + 1;
-                  const relativeIndex = column - metrics.startColumn;
-                  const active = relativeIndex >= 0 && relativeIndex < metrics.letters.length;
-                  const highlight = column === highlightColumn;
-                  const showLetter = active && (revealAll || row.opened);
-                  const letter = showLetter ? metrics.letters[relativeIndex] : "";
-                  const classes = [
-                    "round2-grid-cell",
-                    active ? "active" : "empty",
-                    row.opened ? "opened" : "",
-                    highlight ? "highlight" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
-
-                  return `
-                    <div class="${classes}">
-                      ${active && relativeIndex === 0 ? `<span class="round2-grid-order">${row.number}</span>` : ""}
-                      <span class="round2-grid-letter">${esc(letter)}</span>
-                    </div>
-                  `;
-                }).join("")}
+              <div class="round2-grid-cells round2-hint-cells">
+                ${
+                  letters.length
+                    ? letters
+                        .map(
+                          (letter, letterIndex) => `
+                            <div class="round2-grid-cell active ${showLetters ? "opened" : ""} ${
+                              showHighlights && showLetters && letterIndex === highlightLetterIndex ? "highlight" : ""
+                            }">
+                              <span class="round2-grid-letter">${esc(showLetters ? letter : "?")}</span>
+                            </div>
+                          `,
+                        )
+                        .join("")
+                    : `<div class="round2-empty-word">Chua nhap hang ngang</div>`
+                }
               </div>
             </div>
           `;
@@ -1084,15 +1125,6 @@ function setRound3LiveQuestion(draft, ref) {
   if (!question) return;
 
   question.status = "live";
-  if (draft.round3.armedTrap) {
-    question.trap = draft.round3.armedTrap;
-    draft.round3.lastTrapAnnouncement = {
-      packId: pack.id,
-      questionIndex: ref.index,
-      type: draft.round3.armedTrap,
-    };
-    draft.round3.armedTrap = null;
-  }
 
   draft.presentation.open = false;
   draft.presentation.ref = ref;
@@ -1103,7 +1135,9 @@ function setRound3LiveQuestion(draft, ref) {
   draft.showStandings = false;
   draft.presentation.selectedChoiceIndex = -1;
   draft.presentation.typedResponse = "";
-  draft.presentation.scoreTeamId = draft.currentTeamId;
+  draft.presentation.scoreTeamId = draft.round3.activeTeamId;
+  draft.round3.bombVideoVisible = false;
+  draft.round3.bombVideoToken = null;
 }
 
 function getNextRound3QuestionRef(currentState, packId = currentState.round3.selectedPack, fromIndex = -1) {
@@ -1122,6 +1156,18 @@ function getNextRound3QuestionRef(currentState, packId = currentState.round3.sel
   }
 
   return null;
+}
+
+function getAdjacentRound3QuestionRef(currentState, packId = currentState.round3.selectedPack, fromIndex = -1, step = 1) {
+  const pack =
+    currentState.round3.packs.find((item) => item.id === normalizeRound3PackId(currentState, packId)) ??
+    currentState.round3.packs[0];
+  if (!pack || pack.questions.length === 0) return null;
+
+  const total = pack.questions.length;
+  const normalizedIndex =
+    fromIndex < 0 ? (step > 0 ? 0 : total - 1) : (fromIndex + step + total) % total;
+  return createPresentationRef("round3-question", normalizedIndex, pack.id);
 }
 
 function getPresentationLabel(item, currentState = state) {
@@ -1153,6 +1199,7 @@ function normalizeFieldValue(field, value) {
   if (field === "revealType") return value || null;
   if (field === "content.timerSeconds") return Math.max(5, Number(value || QUESTION_TIMER_SECONDS));
   if (field === "startColumn") return clampInteger(value, 1, 20, 1);
+  if (field === "highlightIndex") return clampInteger(value, 1, 20, 1);
   if (field === "gridColumns") return clampInteger(value, 8, 20, 14);
   if (field === "highlightColumn") return clampInteger(value, 1, 20, 7);
   if (field === "answerWord") return String(value || "").toUpperCase().replace(/\s+/g, "");
@@ -1285,6 +1332,19 @@ function syncPresentationMediaPlayback() {
     if (!(node instanceof HTMLVideoElement)) return;
     if (node.dataset.introScreen) return;
     if (node.dataset.autoPlay !== "true") return;
+    const bombToken = node.dataset.round3BombToken || "";
+    if (bombToken && node.dataset.playbackToken !== bombToken) {
+      node.dataset.playbackToken = bombToken;
+      node.pause();
+      try {
+        node.currentTime = 0;
+      } catch {}
+      const autoplayAttempt = node.play();
+      if (typeof autoplayAttempt?.catch === "function") {
+        autoplayAttempt.catch(() => {});
+      }
+      return;
+    }
     node.defaultMuted = false;
     node.muted = false;
     node.volume = 1;
@@ -1377,12 +1437,32 @@ function getCurrentCover(currentState = state) {
   };
 }
 
-function renderCurrentTeamSummary() {
-  const team = findTeam(state.currentTeamId);
+function renderCurrentTeamSummary(teamId = state.currentTeamId, eyebrow = "Current Team") {
+  const team = findTeam(teamId);
   return `
     <div class="current-team-summary">
-      <span class="eyebrow">Current Team</span>
+      <span class="eyebrow">${esc(eyebrow)}</span>
       <strong>${esc(team?.name ?? "Chua chon doi")}</strong>
+    </div>
+  `;
+}
+
+function renderRound3TeamQuickButtons() {
+  return `
+    <div class="pack-button-row">
+      ${getVisibleTeams()
+        .map(
+          (team) => `
+            <button
+              class="pack-pill ${state.round3.activeTeamId === team.id ? "active" : ""}"
+              data-action="round3-quick-team"
+              data-team-id="${team.id}"
+            >
+              ${esc(team.name)}
+            </button>
+          `,
+        )
+        .join("")}
     </div>
   `;
 }
@@ -1397,7 +1477,7 @@ function renderPresentationResponseAdmin(item) {
 
     return `
       <div class="field-label">
-        <span>Player answer</span>
+        <span>Người chơi trả lời</span>
         <div class="inline-action-row">
           <button class="small-btn ${state.presentation.selectedChoiceIndex < 0 ? "active" : ""}" data-action="presentation-clear-response">
             Clear
@@ -1434,28 +1514,11 @@ function renderPresentationResponseAdmin(item) {
 
 function renderPresentationResponseDisplay(item) {
   const content = item?.content ?? {};
-
-  if (content.questionType === "multiple_choice") {
-    if (state.presentation.selectedChoiceIndex == null || state.presentation.selectedChoiceIndex < 0) return "";
-    const choice = content.choices[state.presentation.selectedChoiceIndex];
-    if (!choice || choice.trim() === "") return "";
-
-    return `
-      <div class="presentation-player-answer choice-response">
-        <div class="answer-kicker">Player answer</div>
-        <div class="player-answer-choice">
-          <span>${String.fromCharCode(65 + state.presentation.selectedChoiceIndex)}</span>
-          <strong>${esc(choice)}</strong>
-        </div>
-      </div>
-    `;
-  }
-
   if (!state.presentation.typedResponse.trim()) return "";
 
   return `
     <div class="presentation-player-answer">
-      <div class="answer-kicker">Player answer</div>
+      <div class="answer-kicker"Người chơi trả lời</div>
       <div class="player-answer-text">${esc(state.presentation.typedResponse)}</div>
     </div>
   `;
@@ -1507,6 +1570,8 @@ function renderQuestionContentBlocks(item, showPlayerResponse = true) {
           `
           : ""
       }
+      
+      ${showPlayerResponse ? renderPresentationResponseDisplay(item) : ""}
     </div>
   `;
 }
@@ -1984,6 +2049,10 @@ function renderPresentationAdminPanel() {
   const timer = getTimerSnapshot(state.presentation.timer);
   const isRound1Item = item && state.presentation.ref?.scope === "round1-cell";
   const isRound3Item = item && state.presentation.ref?.scope === "round3-question";
+  const round3Pack = isRound3Item ? getRound3Pack(state.presentation.ref?.packId) : null;
+  const round3CorrectPoints = isRound3Item ? getRound3QuestionPoints(round3Pack, item) : 0;
+  const round3WrongPoints = isRound3Item ? getRound3WrongPoints(round3Pack) : 0;
+  const round3TrapLabel = isRound3Item ? (item?.trap === "bomb" ? "Bomb" : item?.trap === "x2" ? "X2" : "None") : "";
   const canShowHelpVideo = isRound1Item && item.revealType !== "bomb";
 
   return `
@@ -2021,12 +2090,18 @@ function renderPresentationAdminPanel() {
                       </div>
                       <div class="inline-action-row">
                         <button class="small-btn success" data-action="round3-mark-result" data-result="correct">
-                          Right +${Number(state.round3.correctPoints || 0)}
+                          Right +${Number(round3CorrectPoints)}
+                        </button>
+                        <button class="small-btn subtle" data-action="round3-mark-result" data-result="wrong_no_penalty">
+                          Wrong -0
                         </button>
                         <button class="small-btn danger" data-action="round3-mark-result" data-result="wrong">
-                          Wrong -${Number(state.round3.wrongPoints || 0)}
+                          Wrong -${Number(round3WrongPoints)}
                         </button>
+                        <button class="small-btn" data-action="round3-open-previous">Previous question</button>
                         <button class="small-btn" data-action="round3-open-next">Next question</button>
+                        <button class="small-btn subtle" data-action="round3-show-bomb-video">Show bomb video</button>
+                        <button class="small-btn subtle" data-action="round3-hide-bomb-video">Hide bomb video</button>
                         <button class="small-btn subtle" data-action="round3-finish-turn">Finish turn</button>
                       </div>
                     </div>
@@ -2091,25 +2166,22 @@ function renderPresentationAdminPanel() {
                   : ""
               }
 
-              ${renderPresentationResponseAdmin(item)}
+              ${isRound3Item ? "" : renderPresentationResponseAdmin(item)}
 
               <div class="dual-form-grid compact">
                 <div class="field-label">
                   <span>${isRound3Item ? "Playing team" : "Score target"}</span>
-                  ${renderCurrentTeamSummary()}
+                  ${isRound3Item ? renderCurrentTeamSummary(state.round3.activeTeamId, "Playing team") : renderCurrentTeamSummary()}
+                  ${isRound3Item ? renderRound3TeamQuickButtons() : ""}
                 </div>
                 ${
                   isRound3Item
                     ? `
-                      <div class="dual-form-grid compact quickfire-score-grid">
-                        <label class="field-label">
-                          <span>Right points</span>
-                          <input class="number-input" type="number" value="${Number(state.round3.correctPoints || 0)}" data-action="round3-set-score-value" data-kind="correct">
-                        </label>
-                        <label class="field-label">
-                          <span>Wrong penalty</span>
-                          <input class="number-input" type="number" value="${Number(state.round3.wrongPoints || 0)}" data-action="round3-set-score-value" data-kind="wrong">
-                        </label>
+                      <div class="current-team-summary">
+                        <span class="eyebrow">Bomb warning</span>
+                        <strong>${item?.trap === "bomb" ? "BOMB ARMED" : "No bomb"}</strong>
+                        <span>${item?.trap === "x2" ? "This question also has X2." : "No bomb will be shown unless you trigger bomb video."}</span>
+                        <span>Current mark: ${esc(round3TrapLabel)}</span>
                       </div>
                     `
                     : `
@@ -2219,7 +2291,7 @@ function renderPresentationScreen() {
             state.presentation.showAnswer
               ? `
                 <div class="presentation-answer-card">
-                  <div class="answer-kicker">Correct answer</div>
+                  <div class="answer-kicker">Đáp án đúng</div>
                   <div class="answer-value">${esc(content.answer || "Chua nhap dap an")}</div>
                 </div>
               `
@@ -2312,7 +2384,7 @@ function renderPresentationScreen() {
             state.presentation.showAnswer
               ? `
                 <div class="presentation-answer-card">
-                  <div class="answer-kicker">Correct answer</div>
+                  <div class="answer-kicker">Đáp án đúng</div>
                   <div class="answer-value">${esc(content.answer || "Chua nhap dap an")}</div>
                 </div>
               `
@@ -2384,7 +2456,7 @@ function renderPresentationScreen() {
         state.presentation.showAnswer
           ? `
             <div class="presentation-answer-card">
-              <div class="answer-kicker">Correct answer</div>
+              <div class="answer-kicker">Đáp án đúng</div>
               <div class="answer-value">${esc(content.answer || "Chua nhap dap an")}</div>
             </div>
           `
@@ -2430,7 +2502,7 @@ function renderLiveRoundAdminPanel() {
   if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
   if (state.currentRound === 1) return renderRound1LiveAdmin();
   if (state.currentRound === 2) return renderRound2LiveAdmin();
-  if (state.currentRound === 3) return renderRound3LiveAdmin();
+  if (state.currentRound === 3) return renderRound3LiveAdminV2();
   return renderRound1LiveAdmin();
 }
 
@@ -2438,7 +2510,7 @@ function renderQuestionBankPanel() {
   if (isCoverScreen(state.currentRound) || isIntroScreen(state.currentRound)) return renderNavigationAdmin();
   if (state.currentRound === 1) return renderRound1Admin();
   if (state.currentRound === 2) return renderRound2Admin();
-  if (state.currentRound === 3) return renderRound3Admin();
+  if (state.currentRound === 3) return renderRound3AdminV2();
   return renderRound1Admin();
 }
 
@@ -2447,7 +2519,7 @@ function renderRoundDisplay() {
   if (isIntroScreen(state.currentRound)) return renderRoundIntroScreen();
   if (state.currentRound === 1) return renderRound1Display();
   if (state.currentRound === 2) return renderRound2Display();
-  if (state.currentRound === 3) return renderRound3Display();
+  if (state.currentRound === 3) return renderRound3DisplayV2();
   return renderRound1Display();
 }
 
@@ -2490,6 +2562,10 @@ function renderRound1Admin() {
         <div>
           <div class="eyebrow">Selected card</div>
           <h3 class="panel-title">O ${selectedCell.number}</h3>
+        </div>
+        <div class="current-team-summary">
+          <span class="eyebrow">Current mark</span>
+          <strong>${esc(currentQuestionTrapLabel)}</strong>
         </div>
         <div class="inline-action-row">
           <button class="small-btn" data-action="open-item-screen" data-scope="round1-cell" data-index="${editorState.round1Index}">
@@ -2611,52 +2687,41 @@ function renderRound1Display() {
 
 function renderRound2Admin() {
   const seeFutureTeam = findTeam(state.round2.seeFuture.teamId);
-  const centerHintsValue = state.round2.centerHints.join("\n");
   const selectedRow = getSelectedRound2Row();
-  const selectedMetrics = getRound2RowMetrics(selectedRow);
-  const derivedCenterAnswer = getRound2DerivedCenterAnswer();
   const centerAnswerPreview = getRound2CenterAnswer() || "CHUA CO";
+  const selectedLetters = getRound2AnswerLetters(selectedRow);
+  const selectedHighlightIndex = getRound2HighlightLetterIndex(selectedRow);
+  const selectedHighlightLetter = getRound2HighlightedLetter(selectedRow) || "-";
 
   return `
     <section class="admin-card">
       <div class="panel-heading">
         <div>
           <div class="eyebrow">Round 2 bank</div>
-          <h2 class="panel-title">Grid layout va noi dung hang ngang</h2>
+          <h2 class="panel-title">Noi dung cau hoi, hang ngang va dap an cuoi</h2>
         </div>
         <button class="small-btn" data-action="set-control-view" data-view="live">Back to Live Control</button>
       </div>
 
-      <div class="dual-form-grid compact">
-        <label class="field-label">
-          <span>So cot hien thi</span>
-          <input class="text-input" type="number" min="8" max="20" value="${getRound2GridColumns()}" data-action="set-item-field" data-scope="round2-center" data-index="0" data-field="gridColumns">
-        </label>
-        <label class="field-label">
-          <span>Cot dap an doc</span>
-          <input class="text-input" type="number" min="1" max="${getRound2GridColumns()}" value="${getRound2HighlightColumn()}" data-action="set-item-field" data-scope="round2-center" data-index="0" data-field="highlightColumn">
-        </label>
-        <label class="field-label">
-          <span>Dap an doc (de trong de tu suy ra tu grid)</span>
-          <input class="text-input" type="text" value="${esc(state.round2.centerAnswer)}" data-action="set-item-field" data-scope="round2-center" data-index="0" data-field="centerAnswer">
-        </label>
-      </div>
-
       <label class="field-label">
-        <span>Goi y dap an doc (moi dong 1 goi y)</span>
-        <textarea class="textarea-input" rows="4" data-action="set-item-field" data-scope="round2-center" data-index="0" data-field="centerHintsText">${esc(centerHintsValue)}</textarea>
+        <span>Dap an cuoi cung</span>
+        <input class="text-input" type="text" value="${esc(state.round2.centerAnswer)}" data-action="set-item-field" data-scope="round2-center" data-index="0" data-field="centerAnswer">
       </label>
 
       <div class="round2-bank-layout">
         <article class="admin-preview-card">
-          <div class="panel-mini-title">Grid preview</div>
-          ${renderRound2CrosswordBoard({ revealAll: true, selectedIndex: editorState.round2Index, compact: true })}
+          <div class="panel-mini-title">Preview cac hang ngang duoc mo</div>
+          ${renderRound2CrosswordBoard({
+            revealAll: true,
+            selectedIndex: editorState.round2Index,
+            compact: true,
+            showHighlights: true,
+          })}
         </article>
         <article class="admin-preview-card">
-          <div class="panel-mini-title">Dap an doc suy ra tu cot noi bat</div>
+          <div class="panel-mini-title">Dap an cuoi cung</div>
           <div class="round2-derived-answer">${esc(centerAnswerPreview)}</div>
-          <div class="round2-derived-meta">Suy ra tu grid: ${esc(derivedCenterAnswer || "Khong co giao diem")}</div>
-          <div class="round2-derived-meta">Cot noi bat: ${getRound2HighlightColumn()} / ${getRound2GridColumns()}</div>
+          <div class="round2-derived-meta">Chu highlight chi la goi y de ban tu tao dap an cuoi cung.</div>
         </article>
       </div>
 
@@ -2672,7 +2737,6 @@ function renderRound2Admin() {
       <div class="round2-row-bank-list">
         ${state.round2.rows
           .map((row, index) => {
-            const metrics = getRound2RowMetrics(row);
             return `
               <article class="round2-bank-row ${editorState.round2Index === index ? "selected-editor" : ""}">
                 <div class="round2-bank-row-main">
@@ -2680,8 +2744,7 @@ function renderRound2Admin() {
                   <span>${esc(row.answerWord || "Chua nhap dap an")}</span>
                 </div>
                 <div class="round2-bank-row-meta">
-                  <span>Cot ${metrics.startColumn}</span>
-                  <span>Giao diem: ${esc(metrics.crossLetter || "-")}</span>
+                  <span>Chu duoc chon: ${esc(getRound2HighlightedLetter(row) || "-")}</span>
                   <span>${row.opened ? "Da mo" : "Dang an"}</span>
                 </div>
                 <div class="inline-action-row">
@@ -2708,26 +2771,37 @@ function renderRound2Admin() {
 
       <div class="dual-form-grid compact">
         <label class="field-label">
-          <span>Dap an tren grid</span>
+          <span>Hang ngang duoc tiet lo</span>
           <input class="text-input" type="text" value="${esc(selectedRow.answerWord)}" data-action="set-item-field" data-scope="round2-row" data-index="${editorState.round2Index}" data-field="answerWord">
         </label>
         <label class="field-label">
-          <span>Bat dau tu cot</span>
-          <input class="text-input" type="number" min="1" max="${getRound2GridColumns()}" value="${selectedMetrics.startColumn}" data-action="set-item-field" data-scope="round2-row" data-index="${editorState.round2Index}" data-field="startColumn">
+          <span>Vi tri chu duoc highlight</span>
+          <select class="select-input" data-action="set-item-field" data-scope="round2-row" data-index="${editorState.round2Index}" data-field="highlightIndex">
+            ${
+              selectedLetters.length
+                ? selectedLetters
+                    .map(
+                      (letter, letterIndex) => `
+                        <option value="${letterIndex + 1}" ${selectedHighlightIndex === letterIndex ? "selected" : ""}>
+                          ${letterIndex + 1} - ${esc(letter)}
+                        </option>
+                      `,
+                    )
+                    .join("")
+                : `<option value="1" selected>1 - -</option>`
+            }
+          </select>
         </label>
         <label class="field-label">
-          <span>Chu cai giao voi dap an doc</span>
-          <div class="static-field-value">${esc(selectedMetrics.crossLetter || "Khong cat cot noi bat")}</div>
-        </label>
-      </div>
-
-      <div class="dual-form-grid compact">
-        <label class="field-label">
-          <span>Goi y tren bang</span>
+          <span>Ghi chu quan ly</span>
           <input class="text-input" type="text" value="${esc(selectedRow.clue)}" data-action="set-item-field" data-scope="round2-row" data-index="${editorState.round2Index}" data-field="clue">
         </label>
+        <label class="field-label">
+          <span>Chu hien tai tao dap an cuoi</span>
+          <div class="static-field-value">${esc(selectedHighlightLetter)}</div>
+        </label>
         <div class="field-label">
-          <span>Row screen</span>
+          <span>Mo hang ngang</span>
           <div class="inline-action-row">
             <button class="small-btn ${selectedRow.opened ? "active" : ""}" data-action="round2-toggle-row" data-index="${editorState.round2Index}">
               ${selectedRow.opened ? "Hide row" : "Open row"}
@@ -2740,15 +2814,6 @@ function renderRound2Admin() {
       </div>
 
       ${renderQuestionEditor("round2-row", editorState.round2Index, selectedRow)}
-
-      <div class="admin-divider"></div>
-
-      <div class="inline-action-row">
-        <button class="small-btn" data-action="round2-reveal-next-keyword">Mo goi y doc tiep</button>
-        <button class="small-btn" data-action="round2-show-all-keywords">Mo tat ca goi y</button>
-        <button class="small-btn" data-action="round2-toggle-answer">${state.round2.showCenterAnswer ? "An dap an doc" : "Hien dap an doc"}</button>
-        <button class="small-btn subtle" data-action="round2-reset-center">Reset dap an doc</button>
-      </div>
 
       <div class="admin-divider"></div>
 
@@ -2850,13 +2915,13 @@ function renderRound2Display() {
     <section class="round-display round-two-display">
       <div class="round-two-grid crossword-layout">
         <div class="projector-panel r2-board-stage">
-          <div class="panel-mini-title">Bang chu hang ngang</div>
-          ${renderRound2CrosswordBoard()}
+          <div class="panel-mini-title">Cac hang ngang da duoc mo</div>
+          ${renderRound2CrosswordBoard({ showHighlights: state.round2.showCenterAnswer })}
         </div>
 
         <div class="r2-side-stack">
           <div class="projector-panel r2-center-panel">
-            <div class="center-label">Dap an doc</div>
+            <div class="center-label">Dap an cuoi cung</div>
             <div class="center-answer ${state.round2.showCenterAnswer ? "revealed" : ""}">
               ${centerChars.map((char) => `<span class="center-answer-cell">${esc(char)}</span>`).join("")}
             </div>
@@ -2893,26 +2958,23 @@ function renderRound2LiveAdmin() {
       <div class="panel-heading">
         <div>
           <div class="eyebrow">Round 2 live control</div>
-          <h2 class="panel-title">Crossword layout va dieu khien mo hang</h2>
+          <h2 class="panel-title">Dieu khien mo hang ngang va dap an cuoi</h2>
         </div>
         <button class="small-btn" data-action="set-control-view" data-view="bank">Open Question Bank</button>
       </div>
 
       <div class="round2-bank-layout">
         <article class="admin-preview-card">
-          <div class="panel-mini-title">Grid live preview</div>
-          ${renderRound2CrosswordBoard({ revealAll: true, compact: true })}
+          <div class="panel-mini-title">Preview hang ngang</div>
+          ${renderRound2CrosswordBoard({ revealAll: true, compact: true, showHighlights: true })}
         </article>
         <article class="admin-preview-card">
-          <div class="panel-mini-title">Dap an doc va goi y</div>
+          <div class="panel-mini-title">Dap an cuoi cung</div>
           <div class="round2-derived-answer">${esc(getRound2CenterAnswer() || "CHUA CO")}</div>
+          <div class="round2-derived-meta">Chu highlight chi la goi y. Dap an cuoi cung do ban nhap thu cong.</div>
           <div class="inline-action-row">
-            <button class="small-btn" data-action="round2-reveal-next-keyword">Mo goi y doc tiep</button>
-            <button class="small-btn" data-action="round2-show-all-keywords">Mo tat ca goi y</button>
-          </div>
-          <div class="inline-action-row">
-            <button class="small-btn" data-action="round2-toggle-answer">${state.round2.showCenterAnswer ? "An dap an doc" : "Hien dap an doc"}</button>
-            <button class="small-btn subtle" data-action="round2-reset-center">Reset dap an doc</button>
+            <button class="small-btn" data-action="round2-toggle-answer">${state.round2.showCenterAnswer ? "An dap an cuoi" : "Hien dap an cuoi"}</button>
+            <button class="small-btn subtle" data-action="round2-reset-center">Reset dap an cuoi</button>
           </div>
         </article>
       </div>
@@ -2922,17 +2984,16 @@ function renderRound2LiveAdmin() {
       <div class="round2-row-bank-list">
         ${state.round2.rows
           .map((row, index) => {
-            const metrics = getRound2RowMetrics(row);
             return `
               <article class="round2-bank-row">
                 <div class="round2-bank-row-main">
                   <strong>Hang ${row.number}</strong>
-                  <span>${esc(row.clue)}</span>
+                  <span>${esc(row.answerWord || "...")}</span>
                 </div>
                 <div class="round2-bank-row-meta">
-                  <span>Dap an: ${esc(row.answerWord || "...")}</span>
-                  <span>Cot ${metrics.startColumn}</span>
-                  <span>Giao diem: ${esc(metrics.crossLetter || "-")}</span>
+                  <span>Cau hoi cho doi choi</span>
+                  <span>Chu chon: ${esc(getRound2HighlightedLetter(row) || "-")}</span>
+                  <span>${row.opened ? "Da mo hang" : "Dang an"}</span>
                 </div>
                 <div class="inline-action-row">
                   <button class="small-btn ${row.opened ? "active" : ""}" data-action="round2-toggle-row" data-index="${index}">
@@ -3006,6 +3067,7 @@ function renderRound3Admin() {
   const timer = getTimerSnapshot(state.round3.timer);
   const selectedQuestion = getSelectedRound3Question();
   const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
+  const packPoints = getRound3PackBasePoints(pack);
 
   return `
     <section class="admin-card">
@@ -3053,36 +3115,11 @@ function renderRound3Admin() {
           <span>Dong ho Round 3</span>
           <strong data-bind-timer="round3">${formatClock(timer.remainingMs)}</strong>
         </div>
-        <div class="inline-action-row">
-          <button class="small-btn" data-action="timer-start" data-timer="round3">Start</button>
-          <button class="small-btn" data-action="timer-pause" data-timer="round3">Pause</button>
-          <button class="small-btn subtle" data-action="timer-reset" data-timer="round3">Reset 120s</button>
+        <div class="current-team-summary">
+          <span class="eyebrow">Package score</span>
+          <strong>${esc(getRound3PackControlLabel(pack))}</strong>
+          <span>+${Number(packPoints)} / -${Number(packPoints)}</span>
         </div>
-      </div>
-
-      <div class="panel-heading minor">
-        <div>
-          <div class="eyebrow">Trap toggle</div>
-          <h3 class="panel-title">Next Question Trap</h3>
-        </div>
-      </div>
-      <div class="inline-action-row">
-        <button
-          class="small-btn ${state.round3.armedTrap === "bomb" ? "active danger" : ""}"
-          data-action="round3-arm-trap"
-          data-trap="bomb"
-        >
-          Bomb
-        </button>
-        <button
-          class="small-btn ${state.round3.armedTrap === "x2" ? "active" : ""}"
-          data-action="round3-arm-trap"
-          data-trap="x2"
-        >
-          X2
-        </button>
-        <button class="small-btn subtle" data-action="round3-arm-trap" data-trap="">Clear arm</button>
-        <button class="small-btn subtle" data-action="round3-clear-trap-alert">Clear projector alert</button>
       </div>
 
       <div class="admin-divider"></div>
@@ -3138,6 +3175,33 @@ function renderRound3Admin() {
                     data-status="pending"
                   >
                     Reset
+                  </button>
+                  <button
+                    class="small-btn ${question.trap === "x2" ? "active" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="x2"
+                  >
+                    X2
+                  </button>
+                  <button
+                    class="small-btn danger ${question.trap === "bomb" ? "active danger" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="bomb"
+                  >
+                    Bomb
+                  </button>
+                  <button
+                    class="small-btn subtle"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap=""
+                  >
+                    Clear mark
                   </button>
                 </div>
               </article>
@@ -3280,7 +3344,7 @@ function renderRound3Display() {
                 state.presentation.showAnswer
                   ? `
                     <div class="presentation-answer-card">
-                      <div class="answer-kicker">Correct answer</div>
+                      <div class="answer-kicker">Đáp án đúng</div>
                       <div class="answer-value">${esc(currentQuestion.content.answer || "Chua nhap dap an")}</div>
                     </div>
                   `
@@ -3288,7 +3352,7 @@ function renderRound3Display() {
               }
             `
             : `
-              <div class="presentation-empty">Ready for Quickfire. Use control to show the first question.</div>
+              <div class="presentation-empty">Câu hỏi sẽ xuất hiện khi người chơi bắt đầu</div>
             `
         }
       </div>
@@ -3319,6 +3383,12 @@ function renderRound3LiveAdmin() {
   const currentQuestion = currentRef ? getScopedItem(state, currentRef.scope, currentRef.index, currentRef.packId) : null;
   const currentPack = currentRef ? getRound3Pack(currentRef.packId) : pack;
   const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
+  const currentQuestionCorrectPoints = currentQuestion
+    ? getRound3QuestionPoints(currentPack, currentQuestion)
+    : getRound3PackBasePoints(pack);
+  const currentQuestionWrongPoints = currentQuestion ? getRound3WrongPoints(currentPack) : getRound3PackBasePoints(pack);
+  const currentQuestionTrapLabel = currentQuestion?.trap === "bomb" ? "Bomb" : currentQuestion?.trap === "x2" ? "X2" : "None";
+  const selectedPackPoints = getRound3PackBasePoints(pack);
 
   return `
     <section class="admin-card">
@@ -3378,17 +3448,13 @@ function renderRound3LiveAdmin() {
       <div class="dual-form-grid compact">
         <div class="field-label">
           <span>Playing team</span>
-          ${renderCurrentTeamSummary()}
+          ${renderCurrentTeamSummary(state.round3.activeTeamId, "Playing team")}
+          ${renderRound3TeamQuickButtons()}
         </div>
-        <div class="dual-form-grid compact quickfire-score-grid">
-          <label class="field-label">
-            <span>Right points</span>
-            <input class="number-input" type="number" value="${Number(state.round3.correctPoints || 0)}" data-action="round3-set-score-value" data-kind="correct">
-          </label>
-          <label class="field-label">
-            <span>Wrong penalty</span>
-            <input class="number-input" type="number" value="${Number(state.round3.wrongPoints || 0)}" data-action="round3-set-score-value" data-kind="wrong">
-          </label>
+        <div class="current-team-summary">
+          <span class="eyebrow">Package score</span>
+          <strong>${esc(getRound3PackControlLabel(pack))}</strong>
+          <span>+${Number(selectedPackPoints)} / -${Number(selectedPackPoints)}</span>
         </div>
       </div>
 
@@ -3398,33 +3464,20 @@ function renderRound3LiveAdmin() {
           <strong>${esc(currentQuestion ? `${pack.label} · ${currentQuestion.label}` : "No question on screen")}</strong>
         </div>
         <div class="inline-action-row">
+          <button class="small-btn" data-action="round3-open-previous">Previous question</button>
           <button class="small-btn" data-action="round3-open-next">Next question</button>
           <button class="small-btn success" data-action="round3-mark-result" data-result="correct">
-            Right +${Number(state.round3.correctPoints || 0)}
+            Right +${Number(currentQuestionCorrectPoints)}
           </button>
           <button class="small-btn danger" data-action="round3-mark-result" data-result="wrong">
-            Wrong -${Number(state.round3.wrongPoints || 0)}
+            Wrong -${Number(currentQuestionWrongPoints)}
           </button>
+          <button class="small-btn subtle" data-action="round3-mark-result" data-result="wrong_no_penalty">
+            Wrong no penalty
+          </button>
+          <button class="small-btn subtle" data-action="round3-show-bomb-video">Show bomb video</button>
+          <button class="small-btn subtle" data-action="round3-hide-bomb-video">Hide bomb video</button>
         </div>
-      </div>
-
-      <div class="inline-action-row">
-        <button
-          class="small-btn ${state.round3.armedTrap === "bomb" ? "active danger" : ""}"
-          data-action="round3-arm-trap"
-          data-trap="bomb"
-        >
-          Bomb
-        </button>
-        <button
-          class="small-btn ${state.round3.armedTrap === "x2" ? "active" : ""}"
-          data-action="round3-arm-trap"
-          data-trap="x2"
-        >
-          X2
-        </button>
-        <button class="small-btn subtle" data-action="round3-arm-trap" data-trap="">Clear arm</button>
-        <button class="small-btn subtle" data-action="round3-clear-trap-alert">Clear projector alert</button>
       </div>
 
       <div class="question-status-grid compact-live-grid">
@@ -3454,6 +3507,519 @@ function renderRound3LiveAdmin() {
                     data-status="${question.status === "done" ? "pending" : "done"}"
                   >
                     ${question.status === "done" ? "Reset" : "Done"}
+                  </button>
+                  <button
+                    class="small-btn ${question.trap === "x2" ? "active" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="x2"
+                  >
+                    X2
+                  </button>
+                  <button
+                    class="small-btn danger ${question.trap === "bomb" ? "active danger" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="bomb"
+                  >
+                    Bomb
+                  </button>
+                  <button
+                    class="small-btn subtle"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap=""
+                  >
+                    Clear mark
+                  </button>
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRound3AdminV2() {
+  const pack = getSelectedRound3Pack();
+  const timer = getTimerSnapshot(state.round3.timer);
+  const selectedQuestion = getSelectedRound3Question();
+  const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
+  const packPoints = getRound3PackBasePoints(pack);
+
+  return `
+    <section class="admin-card">
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">Round 3 control</div>
+          <h2 class="panel-title">Quickfire packages</h2>
+        </div>
+      </div>
+
+      <div class="pack-button-row">
+        ${ROUND3_PACK_TYPES
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === selectedTypeId ? "active" : ""}"
+                data-action="round3-select-pack-type"
+                data-pack-type="${roundPack.id}"
+              >
+                ${esc(roundPack.label)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="pack-button-row">
+        ${getRound3PacksByType(selectedTypeId)
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === pack.id ? "active" : ""}"
+                data-action="round3-select-pack"
+                data-pack-id="${roundPack.id}"
+              >
+                Goi ${Number(roundPack.slot)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="timer-admin-card">
+        <div class="timer-readout">
+          <span>Dong ho Round 3</span>
+          <strong data-bind-timer="round3">${formatClock(timer.remainingMs)}</strong>
+        </div>
+        <div class="current-team-summary">
+          <span class="eyebrow">Package score</span>
+          <strong>${esc(getRound3PackControlLabel(pack))}</strong>
+          <span>+${Number(packPoints)} / -${Number(packPoints)}</span>
+        </div>
+      </div>
+
+      <div class="admin-divider"></div>
+
+      <div class="pack-button-row">
+        ${pack.questions
+          .map(
+            (question, index) => `
+              <button class="pack-pill ${editorState.round3Index === index ? "active" : ""}" data-action="select-editor-item" data-scope="round3-question" data-pack-id="${pack.id}" data-index="${index}">
+                ${esc(question.label)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="question-status-grid">
+        ${pack.questions
+          .map(
+            (question, index) => `
+              <article class="qf-question-row">
+                <div class="qf-question-meta">
+                  <strong>${esc(question.label)}</strong>
+                  <span class="status-tag ${question.status !== "pending" ? "filled" : ""}">
+                    ${esc(question.status)}
+                    ${question.trap ? ` Â· ${esc(question.trap.toUpperCase())}` : ""}
+                  </span>
+                </div>
+                <div class="inline-action-row">
+                  <button
+                    class="small-btn ${question.status === "live" ? "active" : ""}"
+                    data-action="round3-set-question-status"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-status="live"
+                  >
+                    Live
+                  </button>
+                  <button
+                    class="small-btn ${question.status === "done" ? "active" : ""}"
+                    data-action="round3-set-question-status"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-status="done"
+                  >
+                    Done
+                  </button>
+                  <button
+                    class="small-btn subtle"
+                    data-action="round3-set-question-status"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-status="pending"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    class="small-btn ${question.trap === "x2" ? "active" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="x2"
+                  >
+                    X2
+                  </button>
+                  <button
+                    class="small-btn danger ${question.trap === "bomb" ? "active danger" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="bomb"
+                  >
+                    Bomb
+                  </button>
+                  <button
+                    class="small-btn subtle"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap=""
+                  >
+                    Clear mark
+                  </button>
+                </div>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="admin-divider"></div>
+
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">Selected question</div>
+          <h3 class="panel-title">${esc(getRound3PackControlLabel(pack))} · ${esc(selectedQuestion?.label ?? "")}</h3>
+        </div>
+        ${
+          selectedQuestion
+            ? `
+              <button class="small-btn" data-action="open-item-screen" data-scope="round3-question" data-pack-id="${pack.id}" data-index="${editorState.round3Index}">
+                Open screen
+              </button>
+            `
+            : ""
+        }
+      </div>
+
+      ${selectedQuestion ? renderQuestionEditor("round3-question", editorState.round3Index, selectedQuestion, pack.id) : ""}
+    </section>
+  `;
+}
+
+function renderRound3DisplayV2() {
+  const currentRef = getCurrentRound3PresentationRef();
+  const pack = getRound3Pack(currentRef?.packId ?? state.round3.selectedPack);
+  const timer = getTimerSnapshot(state.round3.timer);
+  const currentQuestion = currentRef ? getScopedItem(state, currentRef.scope, currentRef.index, currentRef.packId) : null;
+  const activeTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
+
+  return `
+    <section class="round-display round-three-display">
+      <div class="round-three-top">
+        ${ROUND3_PACK_TYPES
+          .map(
+            (roundPack) => `
+              <article class="pack-card ${roundPack.id === activeTypeId ? "active" : ""}">
+                <span>${esc(roundPack.label)}</span>
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="hero-timer-card">
+        <div class="hero-timer-label">Quickfire Timer</div>
+        <div class="hero-timer-value" data-bind-timer="round3">${formatClock(timer.remainingMs)}</div>
+        <div class="timer-bar">
+          <div class="timer-bar-fill" data-bind-progress="round3"></div>
+        </div>
+      </div>
+
+      ${
+        currentQuestion?.trap === "x2"
+          ? `
+            <div class="projector-banner">
+              <div class="banner-label">X2 Active</div>
+              <div class="banner-value">Cau nay duoc tinh diem x2</div>
+            </div>
+          `
+          : ""
+      }
+
+      <div class="round3-question-stage inline-stage ${state.round3.bombVideoVisible ? "with-bomb-video" : ""}">
+        ${
+          currentQuestion
+            ? `
+              <div class="round3-question-main">
+                <div class="presentation-topbar">
+                  <div>
+                    <div class="presentation-kicker">${esc(getPresentationLabel(currentQuestion))}</div>
+                    <h2 class="presentation-title">${esc(currentQuestion.content.title || getPresentationLabel(currentQuestion))}</h2>
+                  </div>
+                  <div class="status-tag filled">Team: ${esc(findTeam(state.round3.activeTeamId)?.name ?? "Team")}</div>
+                </div>
+
+                <div class="presentation-body">
+                  ${
+                    currentQuestion.content.prompt
+                      ? `<div class="presentation-prompt ${currentQuestion.content.questionType === "multiple_choice" ? "compact" : ""}">${esc(
+                          currentQuestion.content.prompt,
+                        )}</div>`
+                      : ""
+                  }
+
+                  ${
+                    currentQuestion.content.questionType === "image" || currentQuestion.content.questionType === "text_image"
+                      ? `
+                        <div class="presentation-image-frame">
+                          ${
+                            currentQuestion.content.imageSrc
+                              ? `<img class="presentation-image" src="${esc(currentQuestion.content.imageSrc)}" alt="${esc(currentQuestion.content.title || getPresentationLabel(currentQuestion))}">`
+                              : `<div class="presentation-image-placeholder">No image path</div>`
+                          }
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    currentQuestion.content.questionType === "multiple_choice"
+                      ? `
+                        <div class="presentation-choices">
+                          ${currentQuestion.content.choices
+                            .filter((choice) => choice.trim() !== "")
+                            .map(
+                              (choice, choiceIndex) => `
+                                <div class="presentation-choice">
+                                  <span>${String.fromCharCode(65 + choiceIndex)}</span>
+                                  <strong>${esc(choice)}</strong>
+                                </div>
+                              `,
+                            )
+                            .join("")}
+                        </div>
+                      `
+                      : ""
+                  }
+                </div>
+
+                ${
+                  state.presentation.showAnswer
+                    ? `
+                      <div class="presentation-answer-card">
+                        <div class="answer-kicker">Đáp án đúng</div>
+                        <div class="answer-value">${esc(currentQuestion.content.answer || "Chua nhap dap an")}</div>
+                      </div>
+                    `
+                    : ""
+                }
+              </div>
+              ${
+                state.round3.bombVideoVisible
+                  ? `
+                    <aside class="round3-bomb-video-panel">
+                      <video
+                        class="presentation-video bomb-video"
+                        src="./assets/media/explosion.mp4"
+                        playsinline
+                        preload="auto"
+                        data-auto-play="true"
+                        data-round3-bomb-token="${esc(state.round3.bombVideoToken ?? "")}"
+                      ></video>
+                    </aside>
+                  `
+                  : ""
+              }
+            `
+            : `
+              <div class="presentation-empty">Câu hỏi sẽ xuất hiện khi người chơi bắt đầu</div>
+            `
+        }
+      </div>
+
+      <div class="quickfire-track">
+        ${pack.questions
+          .map(
+            (question, index) => `
+              <article class="quickfire-chip ${question.status} ${question.trap === "x2" ? "trap-x2" : ""} ${
+                currentRef?.packId === pack.id && currentRef?.index === index ? "current" : ""
+              }">
+                <div class="quickfire-chip-index">${index + 1}</div>
+                <div class="quickfire-chip-status">${esc(question.status)}</div>
+                ${question.trap === "x2" ? `<div class="quickfire-chip-trap">${esc(question.trap.toUpperCase())}</div>` : ""}
+              </article>
+            `,
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderRound3LiveAdminV2() {
+  const pack = getRound3Pack();
+  const timer = getTimerSnapshot(state.round3.timer);
+  const currentRef = getCurrentRound3PresentationRef();
+  const currentQuestion = currentRef ? getScopedItem(state, currentRef.scope, currentRef.index, currentRef.packId) : null;
+  const currentPack = currentRef ? getRound3Pack(currentRef.packId) : pack;
+  const selectedTypeId = pack?.typeId ?? getRound3PackTypeId(state.round3.selectedPack);
+  const currentQuestionCorrectPoints = currentQuestion
+    ? getRound3QuestionPoints(currentPack, currentQuestion)
+    : getRound3PackBasePoints(pack);
+  const currentQuestionWrongPoints = currentQuestion ? getRound3WrongPoints(currentPack) : getRound3PackBasePoints(pack);
+  const selectedPackPoints = getRound3PackBasePoints(pack);
+
+  return `
+    <section class="admin-card">
+      <div class="panel-heading">
+        <div>
+          <div class="eyebrow">Round 3 live control</div>
+          <h2 class="panel-title">Quickfire packages</h2>
+        </div>
+        <button class="small-btn" data-action="set-control-view" data-view="bank">Open Question Bank</button>
+      </div>
+
+      <div class="pack-button-row">
+        ${ROUND3_PACK_TYPES
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === selectedTypeId ? "active" : ""}"
+                data-action="round3-select-pack-type"
+                data-pack-type="${roundPack.id}"
+              >
+                ${esc(roundPack.label)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="pack-button-row">
+        ${getRound3PacksByType(selectedTypeId)
+          .map(
+            (roundPack) => `
+              <button
+                class="pack-pill ${roundPack.id === pack.id ? "active" : ""}"
+                data-action="round3-select-pack"
+                data-pack-id="${roundPack.id}"
+              >
+                Goi ${Number(roundPack.slot)}
+              </button>
+            `,
+          )
+          .join("")}
+      </div>
+
+      <div class="timer-admin-card">
+        <div class="timer-readout">
+          <span>Dong ho Round 3</span>
+          <strong data-bind-timer="round3">${formatClock(timer.remainingMs)}</strong>
+        </div>
+        <div class="inline-action-row">
+          <button class="small-btn" data-action="timer-start" data-timer="round3">Start</button>
+          <button class="small-btn" data-action="timer-pause" data-timer="round3">Pause</button>
+          <button class="small-btn subtle" data-action="timer-reset" data-timer="round3">Reset 120s</button>
+          <button class="small-btn subtle" data-action="round3-finish-turn">Finish turn</button>
+        </div>
+      </div>
+
+      <div class="dual-form-grid compact">
+        <div class="field-label">
+          <span>Playing team</span>
+          ${renderCurrentTeamSummary(state.round3.activeTeamId, "Playing team")}
+          ${renderRound3TeamQuickButtons()}
+        </div>
+        <div class="current-team-summary">
+          <span class="eyebrow">Package score</span>
+          <strong>${esc(getRound3PackControlLabel(pack))}</strong>
+          <span>+${Number(selectedPackPoints)} / -${Number(selectedPackPoints)}</span>
+        </div>
+      </div>
+
+      <div class="timer-admin-card">
+        <div class="timer-readout">
+          <span>Current question</span>
+          <strong>${esc(currentQuestion ? `${getRound3PackControlLabel(currentPack)} · ${currentQuestion.label}` : "No question on screen")}</strong>
+        </div>
+        <div class="inline-action-row">
+          <button class="small-btn" data-action="round3-open-previous">Previous question</button>
+          <button class="small-btn" data-action="round3-open-next">Next question</button>
+          <button class="small-btn success" data-action="round3-mark-result" data-result="correct">
+            Right +${Number(currentQuestionCorrectPoints)}
+          </button>
+          <button class="small-btn danger" data-action="round3-mark-result" data-result="wrong">
+            Wrong -${Number(currentQuestionWrongPoints)}
+          </button>
+          <button class="small-btn subtle" data-action="round3-show-bomb-video">Show bomb video</button>
+          <button class="small-btn subtle" data-action="round3-hide-bomb-video">Hide bomb video</button>
+        </div>
+      </div>
+
+      <div class="question-status-grid compact-live-grid">
+        ${pack.questions
+          .map(
+            (question, index) => `
+              <article class="qf-question-row">
+                <div class="qf-question-meta">
+                  <strong>${esc(question.label)}</strong>
+                  <span class="status-tag ${question.status !== "pending" ? "filled" : ""}">
+                    ${esc(question.status)}
+                    ${question.trap ? ` Ã‚Â· ${esc(question.trap.toUpperCase())}` : ""}
+                  </span>
+                </div>
+                <div class="inline-action-row">
+                  <button class="small-btn active" data-action="round3-show-question" data-pack-id="${pack.id}" data-index="${index}">
+                    Show now
+                  </button>
+                  <button class="small-btn" data-action="edit-bank-item" data-scope="round3-question" data-pack-id="${pack.id}" data-index="${index}">
+                    Edit content
+                  </button>
+                  <button
+                    class="small-btn ${question.status === "done" ? "active" : ""}"
+                    data-action="round3-set-question-status"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-status="${question.status === "done" ? "pending" : "done"}"
+                  >
+                    ${question.status === "done" ? "Reset" : "Done"}
+                  </button>
+                  <button
+                    class="small-btn ${question.trap === "x2" ? "active" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="x2"
+                  >
+                    X2
+                  </button>
+                  <button
+                    class="small-btn danger ${question.trap === "bomb" ? "active danger" : ""}"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap="bomb"
+                  >
+                    Bomb
+                  </button>
+                  <button
+                    class="small-btn subtle"
+                    data-action="round3-set-question-trap"
+                    data-pack-id="${pack.id}"
+                    data-index="${index}"
+                    data-trap=""
+                  >
+                    Clear mark
                   </button>
                 </div>
               </article>
@@ -3820,16 +4386,33 @@ function handleClick(actionNode) {
     return;
   }
 
-  if (action === "round3-arm-trap") {
+  if (action === "round3-set-question-trap") {
     updateState((draft) => {
-      draft.round3.armedTrap = actionNode.dataset.trap || null;
+      const pack = draft.round3.packs.find(
+        (item) => item.id === normalizeRound3PackId(draft, actionNode.dataset.packId || draft.round3.selectedPack),
+      );
+      const question = pack?.questions[Number(actionNode.dataset.index)];
+      if (!question) return;
+
+      const nextTrap = actionNode.dataset.trap || null;
+      question.trap = question.trap === nextTrap ? null : nextTrap;
     });
     return;
   }
 
-  if (action === "round3-clear-trap-alert") {
+  if (action === "round3-show-bomb-video") {
     updateState((draft) => {
-      draft.round3.lastTrapAnnouncement = null;
+      draft.round3.bombVideoVisible = true;
+      draft.round3.bombVideoToken = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      draft.presentation.media = null;
+    });
+    return;
+  }
+
+  if (action === "round3-hide-bomb-video") {
+    updateState((draft) => {
+      draft.round3.bombVideoVisible = false;
+      draft.round3.bombVideoToken = null;
     });
     return;
   }
@@ -3849,13 +4432,27 @@ function handleClick(actionNode) {
   if (action === "round3-open-next") {
     updateState((draft) => {
       const currentRef = getCurrentRound3PresentationRef(draft);
-      const fromIndex = currentRef?.packId === draft.round3.selectedPack ? currentRef.index : -1;
-      const nextRef = getNextRound3QuestionRef(draft, draft.round3.selectedPack, fromIndex);
+      const activePackId = currentRef?.packId ?? draft.round3.selectedPack;
+      const fromIndex = currentRef?.packId === activePackId ? currentRef.index : -1;
+      const nextRef = getAdjacentRound3QuestionRef(draft, activePackId, fromIndex, 1);
       if (nextRef) {
         setRound3LiveQuestion(draft, nextRef);
         return;
       }
       pauseTimer(draft.round3.timer);
+    });
+    return;
+  }
+
+  if (action === "round3-open-previous") {
+    updateState((draft) => {
+      const currentRef = getCurrentRound3PresentationRef(draft);
+      const activePackId = currentRef?.packId ?? draft.round3.selectedPack;
+      const fromIndex = currentRef?.packId === activePackId ? currentRef.index : -1;
+      const previousRef = getAdjacentRound3QuestionRef(draft, activePackId, fromIndex, -1);
+      if (previousRef) {
+        setRound3LiveQuestion(draft, previousRef);
+      }
     });
     return;
   }
@@ -3869,37 +4466,34 @@ function handleClick(actionNode) {
       const question = pack?.questions[currentRef.index];
       if (!question) return;
 
-      const isCorrect = actionNode.dataset.result === "correct";
+      const result = actionNode.dataset.result || "";
+      const isCorrect = result === "correct";
+      const isWrongNoPenalty = result === "wrong_no_penalty";
       const team = draft.teams.find((entry) => entry.id === draft.round3.activeTeamId);
-      if (team) {
-        team.score = Number(team.score) + (isCorrect ? Number(draft.round3.correctPoints || 0) : -Number(draft.round3.wrongPoints || 0));
+      const points = isCorrect ? getRound3QuestionPoints(pack, question, draft) : getRound3WrongPoints(pack, draft);
+      if (team && !isWrongNoPenalty) {
+        team.score = Number(team.score) + (isCorrect ? points : -points);
       }
-      queueSoundCue(draft, isCorrect ? "sfx_score_up" : "sfx_score_down");
+      if (!isWrongNoPenalty) {
+        queueSoundCue(draft, isCorrect ? "sfx_score_up" : "sfx_score_down");
+      }
 
       question.status = "done";
-      const round3Timer = getTimerSnapshot(draft.round3.timer);
-      const nextRef =
-        round3Timer.remainingMs > 0 ? getNextRound3QuestionRef(draft, currentRef.packId, currentRef.index) : null;
-
-      if (nextRef) {
-        setRound3LiveQuestion(draft, nextRef);
-        return;
-      }
-
-      pauseTimer(draft.round3.timer);
-      draft.presentation.ref = null;
-      draft.presentation.showAnswer = false;
-      draft.presentation.selectedChoiceIndex = -1;
-      draft.presentation.typedResponse = "";
+      draft.round3.bombVideoVisible = false;
+      draft.round3.bombVideoToken = null;
       draft.presentation.scoreTeamId = draft.round3.activeTeamId;
+      if (!getNextRound3QuestionRef(draft, currentRef.packId, currentRef.index)) {
+        pauseTimer(draft.round3.timer);
+      }
     });
     return;
   }
 
   if (action === "round3-finish-turn") {
     updateState((draft) => {
-      pauseTimer(draft.round3.timer);
-      draft.round3.lastTrapAnnouncement = null;
+      resetTimer(draft.round3.timer, 120_000);
+      draft.round3.bombVideoVisible = false;
+      draft.round3.bombVideoToken = null;
       draft.presentation.ref = null;
       draft.presentation.showAnswer = false;
       draft.presentation.selectedChoiceIndex = -1;
@@ -3922,13 +4516,14 @@ function handleClick(actionNode) {
 
       question.status = nextStatus;
       if (nextStatus === "pending") {
-        question.trap = null;
         if (draft.presentation.ref?.scope === "round3-question" && draft.presentation.ref.packId === pack.id) {
           if (draft.presentation.ref.index === Number(actionNode.dataset.index)) {
             draft.presentation.ref = null;
             draft.presentation.showAnswer = false;
             draft.presentation.selectedChoiceIndex = -1;
             draft.presentation.typedResponse = "";
+            draft.round3.bombVideoVisible = false;
+            draft.round3.bombVideoToken = null;
           }
         }
         return;
@@ -4015,9 +4610,21 @@ function handleChange(target) {
     return;
   }
 
+  if (action === "round3-quick-team") {
+    updateState((draft) => {
+      const nextTeamId = actionNode.dataset.teamId;
+      if (!nextTeamId) return;
+      draft.round3.activeTeamId = nextTeamId;
+      draft.currentTeamId = nextTeamId;
+      draft.presentation.scoreTeamId = nextTeamId;
+    });
+    return;
+  }
+
   if (action === "round3-set-active-team") {
     updateState((draft) => {
       draft.round3.activeTeamId = target.value;
+      draft.currentTeamId = target.value;
       draft.presentation.scoreTeamId = target.value;
     });
     return;
@@ -4069,6 +4676,20 @@ function handleChange(target) {
       const packId = target.dataset.packId || null;
       withScopedItem(draft, scope, index, packId, (item) => {
         setNestedValue(item, field, normalizeFieldValue(field, target.value));
+        if (scope === "round2-row") {
+          if (field === "answerWord") {
+            const letters = getRound2AnswerLetters(item);
+            item.highlightIndex = letters.length
+              ? clampInteger(item.highlightIndex, 1, letters.length, 1)
+              : 1;
+          }
+          if (field === "highlightIndex") {
+            const letters = getRound2AnswerLetters(item);
+            item.highlightIndex = letters.length
+              ? clampInteger(item.highlightIndex, 1, letters.length, 1)
+              : 1;
+          }
+        }
       });
     });
     return;
